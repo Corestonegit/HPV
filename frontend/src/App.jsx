@@ -805,7 +805,7 @@ function App() {
     return (
       <div className="auth-container">
         <div className="auth-box">
-          <h1 className="auth-title">ХПВ Дашборд</h1>
+          <h1 className="auth-title">HPV Dashboard</h1>
           <form onSubmit={handleLogin} className="auth-form">
             <h2>Вход</h2>
             {loginError && <div className="auth-error">{loginError}</div>}
