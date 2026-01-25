@@ -63,9 +63,11 @@ config.secret.*
 logs/
 
 # Backend specific
-backend/users.json
 backend/__pycache__/
 backend/venv/
+
+# Backend data files (не перезаписываются на проде)
+backend/*.json
 
 # Frontend specific
 frontend/node_modules/
