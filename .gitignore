@@ -29,12 +29,38 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
+# Documentation (не коммитим .md файлы)
+*.md
+
 # Environment variables
 .env
+.env.*
 .env.local
+.env.development
+.env.production
+!.env.example
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+secrets.json
+secrets.yaml
+secrets.yml
+credentials.json
+credentials.yaml
+credentials.yml
+config.secret.*
+*.secret
+*.secrets
 
 # Logs
 *.log
+logs/
 
 # Backend specific
 backend/users.json
