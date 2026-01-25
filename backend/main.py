@@ -749,9 +749,9 @@ async def update_value(
                         plan_key = get_plan_key(request.plan_name)
                         row[plan_key] = request.new_value
                     elif request.field_type == "description":
-                        row["column3"] = request.new_value
+                        row["advantages"] = request.new_value
                     elif request.field_type == "questions":
-                        row["column7"] = request.new_value
+                        row["questions"] = request.new_value
                     break
             if not found:
                 raise HTTPException(status_code=404, detail="Характеристика не найдена")
@@ -766,9 +766,9 @@ async def update_value(
                 plan_key = get_plan_key(request.plan_name)
                 row[plan_key] = request.new_value
             elif request.field_type == "description":
-                row["column3"] = request.new_value
+                row["advantages"] = request.new_value
             elif request.field_type == "questions":
-                row["column7"] = request.new_value
+                row["questions"] = request.new_value
         
         # Сохраняем файл
         with open(file_path, "w", encoding="utf-8") as f:
