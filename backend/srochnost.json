@@ -107,6 +107,19 @@
       "questions": ""
     },
     {
+      "grouping": "Тестовая срочность",
+      "objection": "",
+      "personal_pain": "Легкость, Экономия",
+      "corporate_pain": "Скорость",
+      "standard": "+",
+      "expert": "+",
+      "optimal": "нет",
+      "express": "нет",
+      "ultra": "+",
+      "advantages": "Описания преим",
+      "questions": ""
+    },
+    {
       "grouping": "Скорость",
       "objection": "",
       "column3": "",

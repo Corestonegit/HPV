@@ -671,9 +671,9 @@ def get_plan_key(plan_name: str) -> str:
 
 
 def get_section_filename(section: str) -> Optional[str]:
-    """Найти имя файла по названию раздела"""
-    # Обратный маппинг: раздел -> имя файла
-    reverse_mapping = {
+    """Найти имя файла по названию раздела (динамический поиск)"""
+    # Статический маппинг для известных разделов
+    static_mapping = {
         "Срочность": "srochnost.json",
         "Гибкость команды": "gibkost.json",
         "Безопасность": "bezopasnost.json",
@@ -688,7 +688,32 @@ def get_section_filename(section: str) -> Optional[str]:
         "Прозрачная отчетность": "buhotch.json",
         "Конструкторское бюро": "buhotch.json"
     }
-    return reverse_mapping.get(section)
+    
+    # Сначала проверяем статический маппинг
+    if section in static_mapping:
+        return static_mapping[section]
+    
+    # Динамический поиск во всех JSON файлах
+    backend_dir = os.path.dirname(__file__)
+    for filename in os.listdir(backend_dir):
+        if filename.endswith('.json') and filename != 'users.json':
+            file_path = os.path.join(backend_dir, filename)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                # Проверяем структуру с несколькими таблицами
+                if "tables" in data and isinstance(data["tables"], list):
+                    for table in data["tables"]:
+                        if table.get("table_name") == section:
+                            return filename
+                # Проверяем структуру с одной таблицей
+                elif data.get("table_name") == section:
+                    return filename
+            except:
+                continue
+    
+    return None
 
 
 # Эндпоинты редактирования (только для администраторов)
@@ -757,6 +782,408 @@ async def update_value(
         print(f"Ошибка при обновлении значения: {e}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Ошибка при обновлении: {str(e)}")
+
+
+# ===== API для управления разделами =====
+
+class CreateSectionRequest(BaseModel):
+    name: str  # Название раздела
+
+
+class CreateCharacteristicRequest(BaseModel):
+    name: str  # Название характеристики
+    standard: str = "-"  # Значение для тарифа Стандарт
+    expert: str = "-"  # Значение для тарифа Эксперт
+    optimal: str = "-"  # Значение для тарифа Оптима
+    express: str = "-"  # Значение для тарифа Экспресс
+    ultra: str = "-"  # Значение для тарифа Ультра
+    advantages: str = ""  # Преимущества/описание
+    questions: str = ""  # Вопросы
+    personal_pain: str = ""  # Личные боли (через запятую: Легкость, Безопасность, Экономия, Скорость)
+    corporate_pain: str = ""  # Корпоративные боли
+
+
+def section_name_to_filename(section_name: str) -> str:
+    """Преобразовать название раздела в имя файла"""
+    # Транслитерация и очистка
+    translit_map = {
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+        'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+        'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+        'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+        'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+        ' ': '_', '-': '_'
+    }
+    result = []
+    for char in section_name.lower():
+        if char in translit_map:
+            result.append(translit_map[char])
+        elif char.isalnum():
+            result.append(char)
+    return ''.join(result) + '.json'
+
+
+@app.get("/api/sections", tags=["Sections"])
+async def get_all_sections(current_user: User = Depends(get_current_active_user)):
+    """Получить список всех разделов"""
+    sections = []
+    for filename in JSON_FILES:
+        file_data = load_table_data(filename)
+        if not file_data:
+            continue
+        
+        if "tables" in file_data and isinstance(file_data["tables"], list):
+            for table_data in file_data["tables"]:
+                table_name = table_data.get("table_name", "")
+                if table_name:
+                    sections.append({
+                        "name": table_name,
+                        "filename": filename,
+                        "characteristics_count": len(table_data.get("rows", [])) - 1  # -1 for header
+                    })
+        else:
+            table_name = file_data.get("table_name", "")
+            if table_name:
+                sections.append({
+                    "name": table_name,
+                    "filename": filename,
+                    "characteristics_count": len(file_data.get("rows", [])) - 1
+                })
+    
+    return {"sections": sections}
+
+
+@app.post("/api/sections", tags=["Sections"])
+async def create_section(
+    request: CreateSectionRequest,
+    current_user: User = Depends(get_current_active_admin_user)
+):
+    """Создать новый раздел (только для администраторов)"""
+    try:
+        # Проверяем, что раздел не существует
+        existing = get_section_filename(request.name)
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Раздел '{request.name}' уже существует")
+        
+        # Создаем имя файла
+        filename = section_name_to_filename(request.name)
+        file_path = os.path.join(os.path.dirname(__file__), filename)
+        
+        # Проверяем, что файл не существует
+        if os.path.exists(file_path):
+            raise HTTPException(status_code=400, detail=f"Файл '{filename}' уже существует")
+        
+        # Создаем структуру JSON для нового раздела
+        new_section = {
+            "table_name": request.name,
+            "sheet_name": "Лист1",
+            "rows": [
+                {
+                    "grouping": "Группировка",
+                    "objection": "Возражения",
+                    "personal_pain": "Боли личные",
+                    "corporate_pain": "Боли корп",
+                    "standard": "Стандарт",
+                    "expert": "Эксперт",
+                    "optimal": "Оптима",
+                    "express": "Экспресс",
+                    "ultra": "Ультра",
+                    "advantages": "Преимущества",
+                    "questions": "Вопросы"
+                }
+            ]
+        }
+        
+        # Сохраняем файл
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(new_section, f, ensure_ascii=False, indent=2)
+        
+        # Добавляем в список файлов и маппинг
+        if filename not in JSON_FILES:
+            JSON_FILES.append(filename)
+        
+        return {"success": True, "message": f"Раздел '{request.name}' успешно создан", "filename": filename}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Ошибка при создании раздела: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ошибка при создании раздела: {str(e)}")
+
+
+@app.delete("/api/sections/{section_name}", tags=["Sections"])
+async def delete_section(
+    section_name: str,
+    current_user: User = Depends(get_current_active_admin_user)
+):
+    """Удалить раздел со всеми характеристиками (только для администраторов)"""
+    try:
+        filename = get_section_filename(section_name)
+        if not filename:
+            raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден")
+        
+        file_path = os.path.join(os.path.dirname(__file__), filename)
+        
+        # Проверяем, содержит ли файл несколько таблиц
+        file_data = load_table_data(filename)
+        if file_data and "tables" in file_data and isinstance(file_data["tables"], list):
+            # Файл содержит несколько таблиц - удаляем только нужную
+            new_tables = [t for t in file_data["tables"] if t.get("table_name") != section_name]
+            if len(new_tables) == len(file_data["tables"]):
+                raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден в файле")
+            
+            if new_tables:
+                # Сохраняем оставшиеся таблицы
+                file_data["tables"] = new_tables
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(file_data, f, ensure_ascii=False, indent=2)
+            else:
+                # Удаляем файл, если таблиц больше нет
+                os.remove(file_path)
+                if filename in JSON_FILES:
+                    JSON_FILES.remove(filename)
+        else:
+            # Файл содержит одну таблицу - удаляем весь файл
+            os.remove(file_path)
+            if filename in JSON_FILES:
+                JSON_FILES.remove(filename)
+        
+        return {"success": True, "message": f"Раздел '{section_name}' успешно удален"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Ошибка при удалении раздела: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ошибка при удалении раздела: {str(e)}")
+
+
+@app.post("/api/sections/{section_name}/characteristics", tags=["Sections"])
+async def add_characteristic(
+    section_name: str,
+    request: CreateCharacteristicRequest,
+    current_user: User = Depends(get_current_active_admin_user)
+):
+    """Добавить характеристику в раздел (только для администраторов)"""
+    try:
+        filename = get_section_filename(section_name)
+        if not filename:
+            raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден")
+        
+        file_path = os.path.join(os.path.dirname(__file__), filename)
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            file_data = json.load(f)
+        
+        # Создаем новую строку характеристики
+        new_row = {
+            "grouping": request.name,
+            "objection": "",
+            "personal_pain": request.personal_pain,
+            "corporate_pain": request.corporate_pain,
+            "standard": request.standard,
+            "expert": request.expert,
+            "optimal": request.optimal,
+            "express": request.express,
+            "ultra": request.ultra,
+            "advantages": request.advantages,
+            "questions": request.questions
+        }
+        
+        # Добавляем в нужную таблицу
+        if "tables" in file_data and isinstance(file_data["tables"], list):
+            for table_data in file_data["tables"]:
+                if table_data.get("table_name") == section_name:
+                    table_data["rows"].append(new_row)
+                    break
+        else:
+            file_data["rows"].append(new_row)
+        
+        # Сохраняем файл
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(file_data, f, ensure_ascii=False, indent=2)
+        
+        return {"success": True, "message": f"Характеристика '{request.name}' добавлена в раздел '{section_name}'"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Ошибка при добавлении характеристики: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ошибка при добавлении характеристики: {str(e)}")
+
+
+@app.delete("/api/sections/{section_name}/characteristics/{characteristic_name}", tags=["Sections"])
+async def delete_characteristic(
+    section_name: str,
+    characteristic_name: str,
+    current_user: User = Depends(get_current_active_admin_user)
+):
+    """Удалить характеристику из раздела (только для администраторов)"""
+    try:
+        filename = get_section_filename(section_name)
+        if not filename:
+            raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден")
+        
+        file_path = os.path.join(os.path.dirname(__file__), filename)
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            file_data = json.load(f)
+        
+        found = False
+        
+        # Удаляем из нужной таблицы
+        if "tables" in file_data and isinstance(file_data["tables"], list):
+            for table_data in file_data["tables"]:
+                if table_data.get("table_name") == section_name:
+                    original_len = len(table_data["rows"])
+                    table_data["rows"] = [
+                        row for row in table_data["rows"] 
+                        if row.get("grouping") != characteristic_name
+                    ]
+                    found = len(table_data["rows"]) < original_len
+                    break
+        else:
+            original_len = len(file_data["rows"])
+            file_data["rows"] = [
+                row for row in file_data["rows"] 
+                if row.get("grouping") != characteristic_name
+            ]
+            found = len(file_data["rows"]) < original_len
+        
+        if not found:
+            raise HTTPException(status_code=404, detail=f"Характеристика '{characteristic_name}' не найдена")
+        
+        # Сохраняем файл
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(file_data, f, ensure_ascii=False, indent=2)
+        
+        return {"success": True, "message": f"Характеристика '{characteristic_name}' удалена из раздела '{section_name}'"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Ошибка при удалении характеристики: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ошибка при удалении характеристики: {str(e)}")
+
+
+@app.get("/api/sections/{section_name}/characteristics", tags=["Sections"])
+async def get_section_characteristics(
+    section_name: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Получить список характеристик раздела"""
+    try:
+        filename = get_section_filename(section_name)
+        if not filename:
+            raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден")
+        
+        file_path = os.path.join(os.path.dirname(__file__), filename)
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            file_data = json.load(f)
+        
+        characteristics = []
+        
+        # Получаем характеристики из нужной таблицы
+        if "tables" in file_data and isinstance(file_data["tables"], list):
+            for table_data in file_data["tables"]:
+                if table_data.get("table_name") == section_name:
+                    rows = table_data.get("rows", [])
+                    # Пропускаем заголовок (первую строку)
+                    for i, row in enumerate(rows[1:], start=1):
+                        characteristics.append({
+                            "index": i,
+                            "name": row.get("grouping", ""),
+                            "personal_pain": row.get("personal_pain", ""),
+                            "corporate_pain": row.get("corporate_pain", "")
+                        })
+                    break
+        else:
+            rows = file_data.get("rows", [])
+            for i, row in enumerate(rows[1:], start=1):
+                characteristics.append({
+                    "index": i,
+                    "name": row.get("grouping", ""),
+                    "personal_pain": row.get("personal_pain", ""),
+                    "corporate_pain": row.get("corporate_pain", "")
+                })
+        
+        return {"characteristics": characteristics}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+
+
+class ReorderCharacteristicsRequest(BaseModel):
+    order: list  # Список названий характеристик в новом порядке
+
+
+@app.put("/api/sections/{section_name}/characteristics/reorder", tags=["Sections"])
+async def reorder_characteristics(
+    section_name: str,
+    request: ReorderCharacteristicsRequest,
+    current_user: User = Depends(get_current_active_admin_user)
+):
+    """Изменить порядок характеристик в разделе (только для администраторов)"""
+    try:
+        filename = get_section_filename(section_name)
+        if not filename:
+            raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден")
+        
+        file_path = os.path.join(os.path.dirname(__file__), filename)
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            file_data = json.load(f)
+        
+        # Функция для переупорядочивания строк
+        def reorder_rows(rows, new_order):
+            if not rows:
+                return rows
+            
+            header = rows[0]  # Сохраняем заголовок
+            data_rows = rows[1:]
+            
+            # Создаем словарь для быстрого поиска
+            row_dict = {row.get("grouping"): row for row in data_rows}
+            
+            # Формируем новый порядок
+            new_rows = [header]
+            for name in new_order:
+                if name in row_dict:
+                    new_rows.append(row_dict[name])
+                    del row_dict[name]
+            
+            # Добавляем оставшиеся строки (которых не было в new_order)
+            new_rows.extend(row_dict.values())
+            
+            return new_rows
+        
+        # Применяем к нужной таблице
+        if "tables" in file_data and isinstance(file_data["tables"], list):
+            for table_data in file_data["tables"]:
+                if table_data.get("table_name") == section_name:
+                    table_data["rows"] = reorder_rows(table_data["rows"], request.order)
+                    break
+        else:
+            file_data["rows"] = reorder_rows(file_data["rows"], request.order)
+        
+        # Сохраняем файл
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(file_data, f, ensure_ascii=False, indent=2)
+        
+        return {"success": True, "message": "Порядок характеристик обновлен"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Ошибка при изменении порядка: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+
 
 # Настройка безопасности для Swagger UI (должна быть после всех эндпоинтов)
 from fastapi.openapi.utils import get_openapi

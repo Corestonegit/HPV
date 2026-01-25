@@ -2,16 +2,16 @@ import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
 function App() {
-  const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
-  const [painType, setPainType] = useState(null)
-  const [selectedCategories, setSelectedCategories] = useState([])
+  // Отдельные категории для каждого типа боли
+  const [personalCategories, setPersonalCategories] = useState([])   // Категории для личных болей
+  const [corporateCategories, setCorporateCategories] = useState([]) // Категории для корпоративных болей
   const [selectedSection, setSelectedSection] = useState(null)
   const [allPlans, setAllPlans] = useState([])
   const [modalData, setModalData] = useState(null)
   const [tooltip, setTooltip] = useState({ show: false, text: '', x: 0, y: 0 })
-  const [showAdvantages, setShowAdvantages] = useState(false)
-  const [showQuestions, setShowQuestions] = useState(false)
+  const [showAdvantages, setShowAdvantages] = useState(true)
+  const [showQuestions, setShowQuestions] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(localStorage.getItem('token'))
@@ -25,6 +25,28 @@ function App() {
   const [users, setUsers] = useState([])
   const [editingInModal, setEditingInModal] = useState(false)
   const [modalEditValues, setModalEditValues] = useState({})
+  
+  // Состояния для управления разделами
+  const [showSectionManagement, setShowSectionManagement] = useState(false)
+  const [sections, setSections] = useState([])
+  const [newSectionName, setNewSectionName] = useState('')
+  const [selectedSectionForEdit, setSelectedSectionForEdit] = useState(null)
+  const [showAddCharacteristic, setShowAddCharacteristic] = useState(false)
+  const [newCharacteristic, setNewCharacteristic] = useState({
+    name: '',
+    standard: '',
+    expert: '',
+    optimal: '',
+    express: '',
+    ultra: '',
+    advantages: '',
+    questions: '',
+    personal_pain: '',
+    corporate_pain: ''
+  })
+  const [sectionCharacteristics, setSectionCharacteristics] = useState([])
+  const [draggedChar, setDraggedChar] = useState(null)
+  const [dragOverChar, setDragOverChar] = useState(null)
 
   const categories = ['Легкость', 'Безопасность', 'Экономия', 'Скорость']
 
@@ -33,6 +55,27 @@ function App() {
     'Безопасность': 'Защита данных и соответствие требованиям',
     'Экономия': 'Оптимизация затрат и эффективность расходов',
     'Скорость': 'Быстрое выполнение задач и сокращение сроков'
+  }
+
+  // Маппинг категорий в короткие буквы
+  const categoryShortNames = {
+    'Легкость': 'Л',
+    'Безопасность': 'Б',
+    'Экономия': 'Э',
+    'Скорость': 'С'
+  }
+
+  // Функция для получения короткого названия категории
+  const getCategoryShort = (category) => {
+    const normalized = category.trim()
+      .replace('Лёгкость', 'Легкость')
+      .replace('Лекость', 'Легкость')
+      .replace('Безопасностьасность', 'Безопасность')
+      .replace('Безопастность', 'Безопасность')
+      .replace('Безоп', 'Безопасность')
+      .replace('Эконом', 'Экономия')
+      .replace('Сроки', 'Скорость')
+    return categoryShortNames[normalized] || normalized.charAt(0).toUpperCase()
   }
 
   useEffect(() => {
@@ -47,12 +90,6 @@ function App() {
       fetchAllPlans()
     }
   }, [isAuthenticated])
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchPlans()
-    }
-  }, [painType, selectedCategories, isAuthenticated])
 
   const checkAuth = async (authToken = null) => {
     try {
@@ -232,6 +269,215 @@ function App() {
     }
   }
 
+  // Функции для управления разделами
+  const fetchSections = async () => {
+    try {
+      const response = await fetch('/api/sections', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setSections(data.sections || [])
+      }
+    } catch (error) {
+      console.error('Ошибка при загрузке разделов:', error)
+    }
+  }
+
+  const createSection = async () => {
+    if (!newSectionName.trim()) return
+    try {
+      const response = await fetch('/api/sections', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newSectionName.trim() })
+      })
+      if (response.ok) {
+        setNewSectionName('')
+        await fetchSections()
+        await fetchAllPlans()
+      } else {
+        const error = await response.json()
+        alert(error.detail || 'Ошибка создания раздела')
+      }
+    } catch (error) {
+      console.error('Ошибка при создании раздела:', error)
+      alert('Ошибка при создании раздела')
+    }
+  }
+
+  const deleteSection = async (sectionName) => {
+    if (!confirm(`Удалить раздел "${sectionName}" со всеми характеристиками?`)) return
+    try {
+      const response = await fetch(`/api/sections/${encodeURIComponent(sectionName)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (response.ok) {
+        await fetchSections()
+        await fetchAllPlans()
+        if (selectedSectionForEdit === sectionName) {
+          setSelectedSectionForEdit(null)
+        }
+      } else {
+        const error = await response.json()
+        alert(error.detail || 'Ошибка удаления раздела')
+      }
+    } catch (error) {
+      console.error('Ошибка при удалении раздела:', error)
+      alert('Ошибка при удалении раздела')
+    }
+  }
+
+  const addCharacteristic = async () => {
+    if (!selectedSectionForEdit || !newCharacteristic.name.trim()) return
+    try {
+      const response = await fetch(`/api/sections/${encodeURIComponent(selectedSectionForEdit)}/characteristics`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(newCharacteristic)
+      })
+      if (response.ok) {
+        const sectionName = selectedSectionForEdit
+        setNewCharacteristic({
+          name: '',
+          standard: '',
+          expert: '',
+          optimal: '',
+          express: '',
+          ultra: '',
+          advantages: '',
+          questions: '',
+          personal_pain: '',
+          corporate_pain: ''
+        })
+        setShowAddCharacteristic(false)
+        await fetchSections()
+        await fetchAllPlans()
+        // Обновляем список характеристик
+        await fetchSectionCharacteristics(sectionName)
+      } else {
+        const error = await response.json()
+        alert(error.detail || 'Ошибка добавления характеристики')
+      }
+    } catch (error) {
+      console.error('Ошибка при добавлении характеристики:', error)
+      alert('Ошибка при добавлении характеристики')
+    }
+  }
+
+  const deleteCharacteristic = async (sectionName, characteristicName) => {
+    if (!confirm(`Удалить характеристику "${characteristicName}"?`)) return
+    try {
+      const response = await fetch(
+        `/api/sections/${encodeURIComponent(sectionName)}/characteristics/${encodeURIComponent(characteristicName)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      )
+      if (response.ok) {
+        await fetchSections()
+        await fetchAllPlans()
+        // Обновляем список характеристик если раздел выбран
+        if (selectedSectionForEdit === sectionName) {
+          await fetchSectionCharacteristics(sectionName)
+        }
+      } else {
+        const error = await response.json()
+        alert(error.detail || 'Ошибка удаления характеристики')
+      }
+    } catch (error) {
+      console.error('Ошибка при удалении характеристики:', error)
+      alert('Ошибка при удалении характеристики')
+    }
+  }
+
+  const fetchSectionCharacteristics = async (sectionName) => {
+    try {
+      const response = await fetch(`/api/sections/${encodeURIComponent(sectionName)}/characteristics`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setSectionCharacteristics(data.characteristics || [])
+      }
+    } catch (error) {
+      console.error('Ошибка при загрузке характеристик:', error)
+    }
+  }
+
+  const handleCharDragStart = (e, charName) => {
+    if (!isAdmin) return
+    setDraggedChar(charName)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleCharDragOver = (e, charName) => {
+    if (!isAdmin || !draggedChar) return
+    e.preventDefault()
+    if (draggedChar !== charName) {
+      setDragOverChar(charName)
+    }
+  }
+
+  const handleCharDragLeave = () => {
+    setDragOverChar(null)
+  }
+
+  const handleCharDrop = async (targetCharName) => {
+    if (!isAdmin || !draggedChar || draggedChar === targetCharName || !selectedSectionForEdit) return
+    
+    const newOrder = [...sectionCharacteristics]
+    const draggedIndex = newOrder.findIndex(c => c.name === draggedChar)
+    const targetIndex = newOrder.findIndex(c => c.name === targetCharName)
+    
+    if (draggedIndex === -1 || targetIndex === -1) return
+    
+    const [removed] = newOrder.splice(draggedIndex, 1)
+    newOrder.splice(targetIndex, 0, removed)
+    
+    setSectionCharacteristics(newOrder)
+    setDraggedChar(null)
+    setDragOverChar(null)
+    
+    // Сохраняем новый порядок на сервере
+    try {
+      const response = await fetch(`/api/sections/${encodeURIComponent(selectedSectionForEdit)}/characteristics/reorder`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ order: newOrder.map(c => c.name) })
+      })
+      if (response.ok) {
+        await fetchAllPlans()
+      }
+    } catch (error) {
+      console.error('Ошибка при сохранении порядка:', error)
+    }
+  }
+
+  const handleCharDragEnd = () => {
+    setDraggedChar(null)
+    setDragOverChar(null)
+  }
+
   // Функции для редактирования дашборда
   const startEditingInModal = () => {
     if (!isAdmin) return
@@ -309,7 +555,6 @@ function App() {
       
       // Перезагружаем данные
       await fetchAllPlans()
-      await fetchPlans()
       
       // Обновляем модальное окно
       const updatedChar = getAllCharacteristics().find(
@@ -334,6 +579,7 @@ function App() {
   }, [isAdmin, showUserManagement])
 
   const fetchAllPlans = async () => {
+    setLoading(true)
     try {
       const response = await fetch('/api/plans', {
         headers: {
@@ -365,50 +611,21 @@ function App() {
       }
     } catch (error) {
       console.error('Ошибка при загрузке всех тарифов:', error)
-    }
-  }
-
-  const fetchPlans = async () => {
-    setLoading(true)
-    try {
-      let url = '/api/plans'
-      const params = new URLSearchParams()
-      
-      if (painType) {
-        params.append('pain_type', painType)
-      }
-      
-      if (selectedCategories.length > 0) {
-        params.append('categories', selectedCategories.join(','))
-      }
-      
-      if (params.toString()) {
-        url += '?' + params.toString()
-      }
-      
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      if (!response.ok) {
-        if (response.status === 401) {
-          handleLogout()
-          return
-        }
-        throw new Error('Ошибка загрузки данных')
-      }
-      const data = await response.json()
-      setPlans(data.plans || [])
-    } catch (error) {
-      console.error('Ошибка при загрузке тарифов:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  const toggleCategory = (category) => {
-    setSelectedCategories(prev => 
+  const togglePersonalCategory = (category) => {
+    setPersonalCategories(prev => 
+      prev.includes(category)
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    )
+  }
+
+  const toggleCorporateCategory = (category) => {
+    setCorporateCategories(prev => 
       prev.includes(category)
         ? prev.filter(c => c !== category)
         : [...prev, category]
@@ -416,8 +633,8 @@ function App() {
   }
 
   const clearFilters = () => {
-    setPainType(null)
-    setSelectedCategories([])
+    setPersonalCategories([])
+    setCorporateCategories([])
     setSelectedSection(null)
   }
 
@@ -601,45 +818,50 @@ function App() {
       return false
     }
     
-    // Фильтры по типу боли и категориям
-    if (painType || selectedCategories.length > 0) {
-      // Если выбран тип боли, проверяем наличие соответствующего поля
-      if (painType === 'personal' && !char.личные_боли) return false
-      if (painType === 'corporate' && !char.корпоративные_боли) return false
+    // Фильтры по категориям болей (отдельно для личных и корпоративных)
+    const hasPersonalFilter = personalCategories.length > 0
+    const hasCorporateFilter = corporateCategories.length > 0
+    
+    if (hasPersonalFilter || hasCorporateFilter) {
+      const normalizeCat = (cat) => {
+        cat = cat.trim()
+        cat = cat.replace('Лёгкость', 'Легкость').replace('Лекость', 'Легкость')
+        cat = cat.replace('Безопасностьасность', 'Безопасность')
+        cat = cat.replace('Безопасность, Безопасность', 'Безопасность')
+        cat = cat.replace('Безопасность,Безопасность', 'Безопасность')
+        cat = cat.replace('Безопастность', 'Безопасность')
+        cat = cat.replace('Безоп', 'Безопасность')
+        cat = cat.replace('Эконом', 'Экономия')
+        cat = cat.replace('Сроки', 'Скорость')
+        return cat
+      }
       
-      // Если выбраны категории, проверяем их только в соответствующем типе болей
-      if (selectedCategories.length > 0) {
-        const normalizeCat = (cat) => {
-          cat = cat.trim()
-          cat = cat.replace('Лёгкость', 'Легкость').replace('Лекость', 'Легкость')
-          // Исправляем опечатки и дублирования
-          cat = cat.replace('Безопасностьасность', 'Безопасность')
-          cat = cat.replace('Безопасность, Безопасность', 'Безопасность')
-          cat = cat.replace('Безопасность,Безопасность', 'Безопасность')
-          cat = cat.replace('Безопастность', 'Безопасность')
-          cat = cat.replace('Безоп', 'Безопасность')
-          cat = cat.replace('Эконом', 'Экономия')
-          cat = cat.replace('Сроки', 'Скорость')
-          return cat
-        }
-        const normalizedSelected = selectedCategories.map(normalizeCat)
-        
-        // Если выбран тип боли, проверяем категории ТОЛЬКО в соответствующем типе болей
-        if (painType === 'personal') {
-          if (!char.личные_боли) return false
-          const personalCategories = char.личные_боли.split(',').map(normalizeCat)
-          return normalizedSelected.some(cat => personalCategories.includes(cat))
-        } else if (painType === 'corporate') {
-          if (!char.корпоративные_боли) return false
-          const corporateCategories = char.корпоративные_боли.split(',').map(normalizeCat)
-          return normalizedSelected.some(cat => corporateCategories.includes(cat))
-        } else {
-          // Если тип боли не выбран, проверяем оба типа (старое поведение)
-          const personalCategories = char.личные_боли ? char.личные_боли.split(',').map(normalizeCat) : []
-          const corporateCategories = char.корпоративные_боли ? char.корпоративные_боли.split(',').map(normalizeCat) : []
-          const allCategories = [...personalCategories, ...corporateCategories]
-          return normalizedSelected.some(cat => allCategories.includes(cat))
-        }
+      let matchesPersonal = false
+      let matchesCorporate = false
+      
+      // Проверяем личные боли
+      if (hasPersonalFilter && char.личные_боли) {
+        const charPersonalCats = char.личные_боли.split(',').map(normalizeCat)
+        const normalizedPersonal = personalCategories.map(normalizeCat)
+        matchesPersonal = normalizedPersonal.some(cat => charPersonalCats.includes(cat))
+      }
+      
+      // Проверяем корпоративные боли
+      if (hasCorporateFilter && char.корпоративные_боли) {
+        const charCorporateCats = char.корпоративные_боли.split(',').map(normalizeCat)
+        const normalizedCorporate = corporateCategories.map(normalizeCat)
+        matchesCorporate = normalizedCorporate.some(cat => charCorporateCats.includes(cat))
+      }
+      
+      // Логика: если выбраны оба типа — нужно совпадение хотя бы по одному
+      // Если выбран только один тип — нужно совпадение по нему
+      if (hasPersonalFilter && hasCorporateFilter) {
+        // Оба фильтра активны — показываем если совпадает хотя бы один
+        if (!matchesPersonal && !matchesCorporate) return false
+      } else if (hasPersonalFilter) {
+        if (!matchesPersonal) return false
+      } else if (hasCorporateFilter) {
+        if (!matchesCorporate) return false
       }
     }
     
@@ -675,8 +897,8 @@ function App() {
       if (aIndex !== bIndex) {
         return aIndex - bIndex
       }
-      // Если раздел одинаковый, сортируем по названию характеристики
-      return (a.характеристика || '').localeCompare(b.характеристика || '')
+      // Если раздел одинаковый, сохраняем оригинальный порядок из API (не сортируем)
+      return 0
     }
     
     return 0
@@ -798,7 +1020,7 @@ function App() {
     )
   }
 
-  const activeFiltersCount = (painType ? 1 : 0) + selectedCategories.length + (selectedSection ? 1 : 0)
+  const activeFiltersCount = personalCategories.length + corporateCategories.length + (selectedSection ? 1 : 0)
 
   // Если не авторизован, показываем форму входа/регистрации
   if (!isAuthenticated) {
@@ -840,7 +1062,7 @@ function App() {
       {/* Modal */}
       {modalData && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={closeModal}>×</button>
             <div className="modal-header">
               <h2 className="modal-title">{modalData.характеристика}</h2>
@@ -853,21 +1075,6 @@ function App() {
             <div className="modal-section">
               <h3>Раздел</h3>
               <p>{modalData.раздел}</p>
-            </div>
-            <div className="modal-section">
-              <h3>Описание / Преимущества</h3>
-              {editingInModal ? (
-                <textarea
-                  className="modal-input"
-                  value={modalEditValues.description}
-                  onChange={(e) => setModalEditValues({...modalEditValues, description: e.target.value})}
-                  rows={4}
-                />
-              ) : (
-                <p className="modal-description">
-                  {modalData.описание || '—'}
-                </p>
-              )}
             </div>
             {(modalData.личные_боли || modalData.корпоративные_боли) && (
               <div className="modal-section">
@@ -886,23 +1093,38 @@ function App() {
                 )}
               </div>
             )}
-            {modalData.вопросы && (
-              <div className="modal-section">
-                <h3>Вопросы для клиента</h3>
-                {editingInModal ? (
-                  <textarea
-                    className="modal-input"
-                    value={modalEditValues.questions}
-                    onChange={(e) => setModalEditValues({...modalEditValues, questions: e.target.value})}
-                    rows={4}
-                  />
-                ) : (
-                  <p className="modal-questions">
-                    {modalData.вопросы}
-                  </p>
-                )}
-              </div>
-            )}
+            <div className="modal-section">
+              <h3>Преимущества</h3>
+              {editingInModal ? (
+                <textarea
+                  className="modal-textarea-large"
+                  value={modalEditValues.description}
+                  onChange={(e) => setModalEditValues({...modalEditValues, description: e.target.value})}
+                  rows={6}
+                  placeholder="Введите преимущества..."
+                />
+              ) : (
+                <p className="modal-text-large">
+                  {modalData.описание || '—'}
+                </p>
+              )}
+            </div>
+            <div className="modal-section">
+              <h3>Вопросы для клиента</h3>
+              {editingInModal ? (
+                <textarea
+                  className="modal-textarea-large"
+                  value={modalEditValues.questions}
+                  onChange={(e) => setModalEditValues({...modalEditValues, questions: e.target.value})}
+                  rows={6}
+                  placeholder="Введите вопросы для клиента..."
+                />
+              ) : (
+                <p className="modal-text-large">
+                  {modalData.вопросы || '—'}
+                </p>
+              )}
+            </div>
             {modalData.возражения && (
               <div className="modal-section">
                 <h3>Возражения</h3>
@@ -1038,98 +1260,342 @@ function App() {
         </div>
       )}
 
-      <div className="header-container">
-        <div className="header-single-row">
-          <div className="header-left">
-            <div className="logo">ХПВ</div>
-            <div className="header-controls">
-              <button 
-                className={`toggle-column-btn ${showAdvantages ? 'active' : ''}`}
-                onClick={() => setShowAdvantages(!showAdvantages)}
-                title={showAdvantages ? 'Скрыть Преимущества' : 'Показать Преимущества'}
-              >
-                {showAdvantages ? '▼' : '▶'} Преимущества
-              </button>
-              <button 
-                className={`toggle-column-btn ${showQuestions ? 'active' : ''}`}
-                onClick={() => setShowQuestions(!showQuestions)}
-                title={showQuestions ? 'Скрыть Вопросы' : 'Показать Вопросы'}
-              >
-                {showQuestions ? '▼' : '▶'} Вопросы
-              </button>
-            </div>
-          </div>
-          
-          <div className="header-filters-inline">
-            <div className="pain-type-filters">
-              <button
-                className={`pain-type-btn ${painType === 'personal' ? 'active' : 'inactive'}`}
-                onClick={() => setPainType(painType === 'personal' ? null : 'personal')}
-              >
-                <span className="btn-icon">👤</span>
-                <span className="btn-text">Боли личные</span>
-                {painType === 'personal' && <span className="check-icon">✓</span>}
-              </button>
-              <button
-                className={`pain-type-btn ${painType === 'corporate' ? 'active' : 'inactive'}`}
-                onClick={() => setPainType(painType === 'corporate' ? null : 'corporate')}
-              >
-                <span className="btn-icon">🏢</span>
-                <span className="btn-text">Боли корпоративные</span>
-                {painType === 'corporate' && <span className="check-icon">✓</span>}
-              </button>
-            </div>
-
-            <div className="category-filters-inline">
-              <div className="category-buttons-wrapper">
-                {categories.map(category => {
-                  const isSelected = selectedCategories.includes(category)
-                  return (
-                    <button
-                      key={category}
-                      className={`category-filter-btn ${isSelected ? 'active' : 'inactive'}`}
-                      onClick={() => toggleCategory(category)}
-                    >
-                      {isSelected && <span className="check-icon-small">✓</span>}
-                      {category}
-                    </button>
-                  )
-                })}
+      {/* Модальное окно управления разделами */}
+      {showSectionManagement && (
+        <div className="modal-overlay" onClick={() => setShowSectionManagement(false)}>
+          <div className="section-management-modal" onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowSectionManagement(false)}>×</button>
+            <h2>Управление разделами</h2>
+            
+            {/* Создание нового раздела */}
+            <div className="section-create-form">
+              <h3>Создать новый раздел</h3>
+              <div className="section-create-row">
+                <input
+                  type="text"
+                  placeholder="Название раздела"
+                  value={newSectionName}
+                  onChange={e => setNewSectionName(e.target.value)}
+                  className="section-input"
+                />
+                <button onClick={createSection} className="btn-create-section">
+                  + Создать
+                </button>
               </div>
             </div>
 
-            {activeFiltersCount > 0 && (
-              <span className="filter-count-badge">{activeFiltersCount}</span>
-            )}
-            {(painType || selectedCategories.length > 0 || selectedSection) && (
-              <button 
-                className="reset-filter-btn" 
-                onClick={clearFilters}
-              >
-                <span className="reset-icon">↺</span> Сбросить
-              </button>
-            )}
-          </div>
-          
-          <div className="header-right">
-            <div className="user-info">
-              <span className="user-name">{user?.username}</span>
-              {user?.role === 'admin' && (
-                <>
-                  <span className="user-role">Администратор</span>
-                  <button 
-                    className="admin-btn"
-                    onClick={() => setShowUserManagement(true)}
+            {/* Список разделов */}
+            <div className="sections-list">
+              <h3>Существующие разделы ({sections.length})</h3>
+              {sections.map(section => (
+                <div key={section.name} className={`section-item ${selectedSectionForEdit === section.name ? 'selected' : ''}`}>
+                  <div 
+                    className="section-item-info" 
+                    onClick={() => {
+                      if (selectedSectionForEdit === section.name) {
+                        setSelectedSectionForEdit(null)
+                        setSectionCharacteristics([])
+                      } else {
+                        setSelectedSectionForEdit(section.name)
+                        fetchSectionCharacteristics(section.name)
+                      }
+                    }}
                   >
-                    👥 Пользователи
-                  </button>
-                </>
-              )}
-              <button onClick={handleLogout} className="logout-btn">Выйти</button>
+                    <span className="section-name">{section.name}</span>
+                    <span className="section-count">{section.characteristics_count} характеристик</span>
+                    <span className="section-expand">{selectedSectionForEdit === section.name ? '▼' : '▶'}</span>
+                  </div>
+                  <div className="section-item-actions">
+                    <button 
+                      className="btn-add-char"
+                      onClick={(e) => { e.stopPropagation(); setSelectedSectionForEdit(section.name); fetchSectionCharacteristics(section.name); setShowAddCharacteristic(true); }}
+                    >
+                      + Характеристика
+                    </button>
+                    <button 
+                      className="btn-delete-section"
+                      onClick={(e) => { e.stopPropagation(); deleteSection(section.name); }}
+                    >
+                      Удалить раздел
+                    </button>
+                  </div>
+                  
+                  {/* Список характеристик раздела */}
+                  {selectedSectionForEdit === section.name && sectionCharacteristics.length > 0 && (
+                    <div className="characteristics-list">
+                      <div className="characteristics-header">
+                        <span>Характеристики (перетащите для сортировки)</span>
+                      </div>
+                      {sectionCharacteristics.map(char => (
+                        <div 
+                          key={char.name}
+                          className={`characteristic-item ${draggedChar === char.name ? 'dragging' : ''} ${dragOverChar === char.name ? 'drag-over' : ''}`}
+                          draggable={isAdmin}
+                          onDragStart={(e) => handleCharDragStart(e, char.name)}
+                          onDragOver={(e) => handleCharDragOver(e, char.name)}
+                          onDragLeave={handleCharDragLeave}
+                          onDrop={() => handleCharDrop(char.name)}
+                          onDragEnd={handleCharDragEnd}
+                        >
+                          <span className="char-drag-handle">⋮⋮</span>
+                          <span className="char-name">{char.name}</span>
+                          <div className="char-pains">
+                            {char.personal_pain && <span className="pain-tag personal" title="Личные боли">{char.personal_pain}</span>}
+                            {char.corporate_pain && <span className="pain-tag corporate" title="Корпоративные боли">{char.corporate_pain}</span>}
+                          </div>
+                          <button 
+                            className="btn-delete-char"
+                            onClick={() => deleteCharacteristic(section.name, char.name)}
+                            title="Удалить характеристику"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
+
+            {/* Форма добавления характеристики */}
+            {showAddCharacteristic && selectedSectionForEdit && (
+              <div className="add-characteristic-form">
+                <h3>Добавить характеристику в "{selectedSectionForEdit}"</h3>
+                
+                <div className="char-form-field">
+                  <label>Название характеристики *</label>
+                  <input
+                    type="text"
+                    value={newCharacteristic.name}
+                    onChange={e => setNewCharacteristic({...newCharacteristic, name: e.target.value})}
+                    placeholder="Например: Скорость обработки"
+                  />
+                </div>
+
+                <div className="char-form-row">
+                  <div className="char-form-field">
+                    <label>Стандарт</label>
+                    <input
+                      type="text"
+                      value={newCharacteristic.standard}
+                      onChange={e => setNewCharacteristic({...newCharacteristic, standard: e.target.value})}
+                      placeholder="Значение или + для галочки"
+                    />
+                  </div>
+                  <div className="char-form-field">
+                    <label>Эксперт</label>
+                    <input
+                      type="text"
+                      value={newCharacteristic.expert}
+                      onChange={e => setNewCharacteristic({...newCharacteristic, expert: e.target.value})}
+                      placeholder="Значение или + для галочки"
+                    />
+                  </div>
+                  <div className="char-form-field">
+                    <label>Оптима</label>
+                    <input
+                      type="text"
+                      value={newCharacteristic.optimal}
+                      onChange={e => setNewCharacteristic({...newCharacteristic, optimal: e.target.value})}
+                      placeholder="Значение или + для галочки"
+                    />
+                  </div>
+                  <div className="char-form-field">
+                    <label>Экспресс</label>
+                    <input
+                      type="text"
+                      value={newCharacteristic.express}
+                      onChange={e => setNewCharacteristic({...newCharacteristic, express: e.target.value})}
+                      placeholder="Значение или + для галочки"
+                    />
+                  </div>
+                  <div className="char-form-field">
+                    <label>Ультра</label>
+                    <input
+                      type="text"
+                      value={newCharacteristic.ultra}
+                      onChange={e => setNewCharacteristic({...newCharacteristic, ultra: e.target.value})}
+                      placeholder="Значение или + для галочки"
+                    />
+                  </div>
+                </div>
+
+                <div className="char-form-field">
+                  <label>Преимущества / Описание</label>
+                  <textarea
+                    value={newCharacteristic.advantages}
+                    onChange={e => setNewCharacteristic({...newCharacteristic, advantages: e.target.value})}
+                    placeholder="Опишите преимущества этой характеристики"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="char-form-field">
+                  <label>Вопросы для клиента</label>
+                  <textarea
+                    value={newCharacteristic.questions}
+                    onChange={e => setNewCharacteristic({...newCharacteristic, questions: e.target.value})}
+                    placeholder="Вопросы, которые менеджер может задать клиенту"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="char-form-row">
+                  <div className="char-form-field">
+                    <label>Боли личные</label>
+                    <div className="pain-checkboxes">
+                      {categories.map(cat => (
+                        <label key={`personal-${cat}`} className="pain-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={newCharacteristic.personal_pain.includes(cat)}
+                            onChange={e => {
+                              const pains = newCharacteristic.personal_pain.split(',').filter(p => p.trim())
+                              if (e.target.checked) {
+                                pains.push(cat)
+                              } else {
+                                const idx = pains.indexOf(cat)
+                                if (idx > -1) pains.splice(idx, 1)
+                              }
+                              setNewCharacteristic({...newCharacteristic, personal_pain: pains.join(', ')})
+                            }}
+                          />
+                          {cat}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="char-form-field">
+                    <label>Боли корпоративные</label>
+                    <div className="pain-checkboxes">
+                      {categories.map(cat => (
+                        <label key={`corporate-${cat}`} className="pain-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={newCharacteristic.corporate_pain.includes(cat)}
+                            onChange={e => {
+                              const pains = newCharacteristic.corporate_pain.split(',').filter(p => p.trim())
+                              if (e.target.checked) {
+                                pains.push(cat)
+                              } else {
+                                const idx = pains.indexOf(cat)
+                                if (idx > -1) pains.splice(idx, 1)
+                              }
+                              setNewCharacteristic({...newCharacteristic, corporate_pain: pains.join(', ')})
+                            }}
+                          />
+                          {cat}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="char-form-actions">
+                  <button onClick={addCharacteristic} className="btn-save-char">
+                    Добавить характеристику
+                  </button>
+                  <button onClick={() => setShowAddCharacteristic(false)} className="btn-cancel-char">
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
+
+      <header className="app-header">
+        {/* Верхняя строка: логотип, настройки колонок, пользователь */}
+        <div className="header-top">
+          <div className="header-brand">
+            <span className="logo">ХПВ</span>
+            <span className="logo-subtitle">Дашборд</span>
+          </div>
+          
+          <div className="header-columns-toggle">
+            <label className="toggle-switch">
+              <input 
+                type="checkbox" 
+                checked={showAdvantages} 
+                onChange={() => setShowAdvantages(!showAdvantages)}
+              />
+              <span className="toggle-slider"></span>
+              <span className="toggle-label">Преимущества</span>
+            </label>
+            <label className="toggle-switch">
+              <input 
+                type="checkbox" 
+                checked={showQuestions} 
+                onChange={() => setShowQuestions(!showQuestions)}
+              />
+              <span className="toggle-slider"></span>
+              <span className="toggle-label">Вопросы</span>
+            </label>
+          </div>
+
+          <div className="header-user">
+            <span className="user-name">{user?.username}</span>
+            {user?.role === 'admin' && (
+              <>
+                <button className="btn-admin" onClick={() => { setShowSectionManagement(true); fetchSections(); }}>
+                  Разделы
+                </button>
+                <button className="btn-admin" onClick={() => setShowUserManagement(true)}>
+                  Пользователи
+                </button>
+              </>
+            )}
+            <button className="btn-logout" onClick={handleLogout}>Выйти</button>
+          </div>
+        </div>
+
+        {/* Нижняя строка: фильтры */}
+        <div className="header-filters">
+          <div className="filter-group personal">
+            <div className="filter-group-header">Боли личные</div>
+            <div className="filter-group-buttons">
+              {categories.map(category => {
+                const isSelected = personalCategories.includes(category)
+                return (
+                  <button
+                    key={`personal-${category}`}
+                    className={`filter-chip ${isSelected ? 'active' : ''}`}
+                    onClick={() => togglePersonalCategory(category)}
+                  >
+                    {category}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="filter-group corporate">
+            <div className="filter-group-header">Боли корпоративные</div>
+            <div className="filter-group-buttons">
+              {categories.map(category => {
+                const isSelected = corporateCategories.includes(category)
+                return (
+                  <button
+                    key={`corporate-${category}`}
+                    className={`filter-chip ${isSelected ? 'active' : ''}`}
+                    onClick={() => toggleCorporateCategory(category)}
+                  >
+                    {category}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {activeFiltersCount > 0 && (
+            <button className="btn-clear-filters" onClick={clearFilters}>
+              Сбросить фильтры ({activeFiltersCount})
+            </button>
+          )}
+        </div>
+      </header>
 
       <div className="content-wrapper">
         <div className="sidebar-filters">
@@ -1197,8 +1663,8 @@ function App() {
                 <thead>
                   <tr>
                     <th className="col-characteristic">Характеристика</th>
-                    <th className="col-pain col-pain-personal">Боль личная</th>
-                    <th className="col-pain col-pain-corporate">Боль корпоративная</th>
+                    <th className="col-pain col-pain-personal" title="Личные боли: Л-Легкость, Б-Безопасность, С-Скорость, Э-Экономия">Личн.</th>
+                    <th className="col-pain col-pain-corporate" title="Корпоративные боли: Л-Легкость, Б-Безопасность, С-Скорость, Э-Экономия">Корп.</th>
                     {showAdvantages && <th className="col-advantages">Преимущества</th>}
                     {showQuestions && <th className="col-questions">Вопросы</th>}
                     {allPlans.map(plan => (
@@ -1252,8 +1718,6 @@ function App() {
                             openModal(char)
                           }
                         }}
-                        onMouseEnter={(e) => !isHeader && showTooltip('Нажмите для подробной информации', e)}
-                        onMouseLeave={hideTooltip}
                       >
                         <td className={`cell-characteristic ${isHeader ? 'section-header-cell' : ''}`}>
                           <div className="char-content-wrapper">
@@ -1287,12 +1751,18 @@ function App() {
                             )}
                           </div>
                         </td>
-                        <td className={`cell-pain ${isHeader ? 'section-header-cell' : ''}`}>
+                        <td className={`cell-pain cell-pain-compact ${isHeader ? 'section-header-cell' : ''}`}>
                           {!isHeader && (
                             char.личные_боли ? (
-                              <div className="pain-badges-container">
+                              <div className="pain-badges-compact">
                                 {char.личные_боли.split(',').map((pain, idx) => (
-                                  <span key={idx} className="pain-badge personal">{pain.trim()}</span>
+                                  <span 
+                                    key={idx} 
+                                    className={`pain-badge-compact personal pain-${getCategoryShort(pain)}`}
+                                    title={pain.trim()}
+                                  >
+                                    {getCategoryShort(pain)}
+                                  </span>
                                 ))}
                               </div>
                             ) : (
@@ -1300,12 +1770,18 @@ function App() {
                             )
                           )}
                         </td>
-                        <td className={`cell-pain ${isHeader ? 'section-header-cell' : ''}`}>
+                        <td className={`cell-pain cell-pain-compact ${isHeader ? 'section-header-cell' : ''}`}>
                           {!isHeader && (
                             char.корпоративные_боли ? (
-                              <div className="pain-badges-container">
+                              <div className="pain-badges-compact">
                                 {char.корпоративные_боли.split(',').map((pain, idx) => (
-                                  <span key={idx} className="pain-badge corporate">{pain.trim()}</span>
+                                  <span 
+                                    key={idx} 
+                                    className={`pain-badge-compact corporate pain-${getCategoryShort(pain)}`}
+                                    title={pain.trim()}
+                                  >
+                                    {getCategoryShort(pain)}
+                                  </span>
                                 ))}
                               </div>
                             ) : (
@@ -1326,9 +1802,8 @@ function App() {
                           <td className={`cell-questions ${isHeader ? 'section-header-cell' : ''}`}>
                             {!isHeader && (
                               (char.вопросы || char.сомнения) ? (
-                                <div className="questions-text" title={char.вопросы || char.сомнения}>
-                                  {(char.вопросы || char.сомнения).substring(0, 80)}
-                                  {(char.вопросы || char.сомнения).length > 80 && '...'}
+                                <div className="questions-text">
+                                  {char.вопросы || char.сомнения}
                                 </div>
                               ) : (
                                 <span className="questions-empty">—</span>
