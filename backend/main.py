@@ -61,14 +61,6 @@ TABLE_NAME_MAPPING = {
     "Поддержка": "Поддержка"
 }
 
-# Дополнительный маппинг для файлов с неправильным table_name
-# Ключ - имя файла, значение - правильное название раздела
-FILE_NAME_MAPPING = {
-    "podryadchiki.json": "Подрядчики",
-    "kommunikacii.json": "Коммуникации",
-    "podderjka.json": "Поддержка"
-}
-
 # Список JSON файлов для загрузки
 JSON_FILES = [
     "srochnost.json",
@@ -326,14 +318,6 @@ def load_all_plans() -> List[Dict]:
         file_data = load_table_data(filename)
         if not file_data:
             continue
-        
-        # Если table_name неправильный, исправляем по имени файла
-        if filename in FILE_NAME_MAPPING:
-            if "tables" in file_data and isinstance(file_data["tables"], list):
-                for table_data in file_data["tables"]:
-                    table_data["table_name"] = FILE_NAME_MAPPING[filename]
-            else:
-                file_data["table_name"] = FILE_NAME_MAPPING[filename]
         
         # Проверяем, является ли файл массивом таблиц (как buhotch.json)
         if "tables" in file_data and isinstance(file_data["tables"], list):
@@ -671,28 +655,7 @@ def get_plan_key(plan_name: str) -> str:
 
 
 def get_section_filename(section: str) -> Optional[str]:
-    """Найти имя файла по названию раздела (динамический поиск)"""
-    # Статический маппинг для известных разделов
-    static_mapping = {
-        "Срочность": "srochnost.json",
-        "Гибкость команды": "gibkost.json",
-        "Безопасность": "bezopasnost.json",
-        "Целевой сервис": "celevoiservis.json",
-        "ГИСП": "gisp.json",
-        "Изменения": "izmeneniya.json",
-        "ТПП": "tppmpt.json",
-        "Подрядчики": "podryadchiki.json",
-        "Коммуникации": "kommunikacii.json",
-        "Поддержка": "podderjka.json",
-        "Бухгалтерия": "buhotch.json",
-        "Прозрачная отчетность": "buhotch.json",
-        "Конструкторское бюро": "buhotch.json"
-    }
-    
-    # Сначала проверяем статический маппинг
-    if section in static_mapping:
-        return static_mapping[section]
-    
+    """Найти имя файла по названию раздела (полностью динамический поиск)"""
     # Динамический поиск во всех JSON файлах
     backend_dir = os.path.dirname(__file__)
     for filename in os.listdir(backend_dir):
@@ -752,6 +715,10 @@ async def update_value(
                         row["advantages"] = request.new_value
                     elif request.field_type == "questions":
                         row["questions"] = request.new_value
+                    elif request.field_type == "personal_pain":
+                        row["personal_pain"] = request.new_value
+                    elif request.field_type == "corporate_pain":
+                        row["corporate_pain"] = request.new_value
                     break
             if not found:
                 raise HTTPException(status_code=404, detail="Характеристика не найдена")
@@ -769,6 +736,10 @@ async def update_value(
                 row["advantages"] = request.new_value
             elif request.field_type == "questions":
                 row["questions"] = request.new_value
+            elif request.field_type == "personal_pain":
+                row["personal_pain"] = request.new_value
+            elif request.field_type == "corporate_pain":
+                row["corporate_pain"] = request.new_value
         
         # Сохраняем файл
         with open(file_path, "w", encoding="utf-8") as f:
@@ -788,6 +759,10 @@ async def update_value(
 
 class CreateSectionRequest(BaseModel):
     name: str  # Название раздела
+
+
+class RenameSectionRequest(BaseModel):
+    new_name: str  # Новое название раздела
 
 
 class CreateCharacteristicRequest(BaseModel):
@@ -957,6 +932,56 @@ async def delete_section(
         print(f"Ошибка при удалении раздела: {e}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Ошибка при удалении раздела: {str(e)}")
+
+
+@app.put("/api/sections/{section_name}/rename", tags=["Sections"])
+async def rename_section(
+    section_name: str,
+    request: RenameSectionRequest,
+    current_user: User = Depends(get_current_active_admin_user)
+):
+    """Переименовать раздел (только для администраторов)"""
+    try:
+        # Проверяем, что раздел существует
+        filename = get_section_filename(section_name)
+        if not filename:
+            raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден")
+        
+        # Проверяем, что новое имя не занято
+        if request.new_name != section_name:
+            existing = get_section_filename(request.new_name)
+            if existing:
+                raise HTTPException(status_code=400, detail=f"Раздел '{request.new_name}' уже существует")
+        
+        file_path = os.path.join(os.path.dirname(__file__), filename)
+        file_data = load_table_data(filename)
+        
+        if file_data and "tables" in file_data and isinstance(file_data["tables"], list):
+            # Файл содержит несколько таблиц - переименовываем нужную
+            found = False
+            for table in file_data["tables"]:
+                if table.get("table_name") == section_name:
+                    table["table_name"] = request.new_name
+                    found = True
+                    break
+            if not found:
+                raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден в файле")
+        else:
+            # Файл содержит одну таблицу
+            file_data["table_name"] = request.new_name
+        
+        # Сохраняем файл
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(file_data, f, ensure_ascii=False, indent=2)
+        
+        return {"success": True, "message": f"Раздел переименован в '{request.new_name}'"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Ошибка при переименовании раздела: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ошибка при переименовании раздела: {str(e)}")
 
 
 @app.post("/api/sections/{section_name}/characteristics", tags=["Sections"])

@@ -31,6 +31,8 @@ function App() {
   const [sections, setSections] = useState([])
   const [newSectionName, setNewSectionName] = useState('')
   const [selectedSectionForEdit, setSelectedSectionForEdit] = useState(null)
+  const [renamingSection, setRenamingSection] = useState(null)
+  const [renameSectionValue, setRenameSectionValue] = useState('')
   const [showAddCharacteristic, setShowAddCharacteristic] = useState(false)
   const [newCharacteristic, setNewCharacteristic] = useState({
     name: '',
@@ -336,6 +338,47 @@ function App() {
     }
   }
 
+  const startRenameSection = (sectionName) => {
+    setRenamingSection(sectionName)
+    setRenameSectionValue(sectionName)
+  }
+
+  const cancelRenameSection = () => {
+    setRenamingSection(null)
+    setRenameSectionValue('')
+  }
+
+  const saveRenameSection = async (oldName) => {
+    if (!renameSectionValue.trim() || renameSectionValue === oldName) {
+      cancelRenameSection()
+      return
+    }
+    try {
+      const response = await fetch(`/api/sections/${encodeURIComponent(oldName)}/rename`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ new_name: renameSectionValue.trim() })
+      })
+      if (response.ok) {
+        await fetchSections()
+        await fetchAllPlans()
+        if (selectedSectionForEdit === oldName) {
+          setSelectedSectionForEdit(renameSectionValue.trim())
+        }
+        cancelRenameSection()
+      } else {
+        const error = await response.json()
+        alert(error.detail || 'Ошибка переименования раздела')
+      }
+    } catch (error) {
+      console.error('Ошибка при переименовании раздела:', error)
+      alert('Ошибка при переименовании раздела')
+    }
+  }
+
   const addCharacteristic = async () => {
     if (!selectedSectionForEdit || !newCharacteristic.name.trim()) return
     try {
@@ -479,15 +522,40 @@ function App() {
   }
 
   // Функции для редактирования дашборда
+  // Парсим значение с процентом: "текст | 75" -> { text: "текст", percent: 75 }
+  const parseValueWithPercent = (value) => {
+    if (!value) return { text: '', percent: 50 }
+    const match = value.match(/^(.+?)\s*\|\s*(\d+)$/)
+    if (match) {
+      return { text: match[1].trim(), percent: parseInt(match[2]) }
+    }
+    return { text: value, percent: 50 }
+  }
+
   const startEditingInModal = () => {
     if (!isAdmin) return
     setEditingInModal(true)
+    
+    const isHeader = modalData?.is_section_header && (modalData?.характеристика === 'Стоимость' || modalData?.характеристика === 'Сроки')
+    
+    const values = {}
+    allPlans.forEach(plan => {
+      const rawValue = modalData?.значения[plan.название] || ''
+      if (isHeader) {
+        const parsed = parseValueWithPercent(rawValue)
+        values[`value_${plan.название}`] = parsed.text
+        values[`percent_${plan.название}`] = parsed.percent
+      } else {
+        values[`value_${plan.название}`] = rawValue
+      }
+    })
+    
     setModalEditValues({
       description: modalData?.описание || '',
       questions: modalData?.вопросы || '',
-      ...Object.fromEntries(
-        allPlans.map(plan => [`value_${plan.название}`, modalData?.значения[plan.название] || ''])
-      )
+      personal_pain: modalData?.личные_боли || '',
+      corporate_pain: modalData?.корпоративные_боли || '',
+      ...values
     })
   }
 
@@ -522,10 +590,41 @@ function App() {
         })
       }
       
+      // Обновление личных болей
+      if (modalEditValues.personal_pain !== (modalData.личные_боли || '')) {
+        updates.push({
+          section: modalData.раздел,
+          characteristic: modalData.характеристика,
+          new_value: modalEditValues.personal_pain,
+          field_type: 'personal_pain'
+        })
+      }
+      
+      // Обновление корпоративных болей
+      if (modalEditValues.corporate_pain !== (modalData.корпоративные_боли || '')) {
+        updates.push({
+          section: modalData.раздел,
+          characteristic: modalData.характеристика,
+          new_value: modalEditValues.corporate_pain,
+          field_type: 'corporate_pain'
+        })
+      }
+      
       // Обновление значений тарифов
+      const isHeader = modalData.is_section_header && (modalData.характеристика === 'Стоимость' || modalData.характеристика === 'Сроки')
+      
       for (const plan of allPlans) {
-        const key = `value_${plan.название}`
-        const newValue = modalEditValues[key]
+        const textKey = `value_${plan.название}`
+        const percentKey = `percent_${plan.название}`
+        
+        let newValue
+        if (isHeader && modalEditValues[percentKey] !== undefined) {
+          // Для шапок объединяем текст и процент
+          newValue = `${modalEditValues[textKey]} | ${modalEditValues[percentKey]}`
+        } else {
+          newValue = modalEditValues[textKey]
+        }
+        
         const oldValue = modalData.значения[plan.название] || ''
         if (newValue !== oldValue) {
           updates.push({
@@ -569,6 +668,37 @@ function App() {
     } catch (error) {
       console.error('Ошибка при сохранении изменений:', error)
       alert('Ошибка при сохранении изменений: ' + error.message)
+    }
+  }
+
+  const deleteCharacteristicFromModal = async () => {
+    if (!isAdmin || !modalData) return
+    
+    const isHeader = modalData.is_section_header
+    const confirmMsg = isHeader 
+      ? `Удалить шапку "${modalData.характеристика}" из всех тарифов?`
+      : `Удалить характеристику "${modalData.характеристика}" из раздела "${modalData.раздел}"?`
+    
+    if (!confirm(confirmMsg)) return
+    
+    try {
+      const response = await fetch(`/api/sections/${encodeURIComponent(modalData.раздел)}/characteristics/${encodeURIComponent(modalData.характеристика)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      
+      if (response.ok) {
+        await fetchAllPlans()
+        closeModal()
+      } else {
+        const error = await response.json()
+        alert(error.detail || 'Ошибка удаления')
+      }
+    } catch (error) {
+      console.error('Ошибка при удалении:', error)
+      alert('Ошибка при удалении')
     }
   }
 
@@ -982,9 +1112,26 @@ function App() {
     // Проверяем, является ли это заголовком секции
     const isHeader = char.is_section_header
     const isPrice = char.характеристика === 'Стоимость'
+    const isSroki = char.характеристика === 'Сроки'
     
     // Проверяем, является ли значение числовым в разделе "Срочность"
     const isSrochnostNumeric = char.раздел === 'Срочность' && isPureNumber(value)
+    
+    // Для шапки "Сроки" - парсим процент из значения
+    // Формат: "текст (75%)" или "текст | 75" или просто "75"
+    let srokiProgress = null
+    let displayValue = value
+    if (isSroki) {
+      // Ищем процент в формате (XX%) или | XX или просто число в конце
+      const percentMatch = value.match(/\((\d+)%?\)/) || value.match(/\|\s*(\d+)/) || value.match(/(\d+)%?\s*$/)
+      if (percentMatch) {
+        srokiProgress = parseInt(percentMatch[1])
+        // Убираем процент из отображаемого значения если он в скобках или после |
+        if (value.includes('(') || value.includes('|')) {
+          displayValue = value.replace(/\s*\(\d+%?\)/, '').replace(/\s*\|\s*\d+%?/, '').trim()
+        }
+      }
+    }
     
     // Получаем все raw значения для расчета прогресса (используем raw_значения если есть)
     const allValues = allPlans.map(p => {
@@ -995,14 +1142,16 @@ function App() {
     // Используем raw значение для расчета прогресса
     const rawValue = char.raw_значения && char.raw_значения[planName]
     const valueForProgress = rawValue || value
-    const progress = calculateProgress(valueForProgress, allValues, isPrice)
+    const progress = isSroki && srokiProgress !== null 
+      ? srokiProgress 
+      : calculateProgress(valueForProgress, allValues, isPrice)
     
     // Показываем прогресс-бар для заголовков секций или для числовых значений в разделе "Срочность"
     const showProgress = (isHeader || isSrochnostNumeric) && progress !== null
     
     return (
       <div className="value-with-progress">
-        <span className="value-text">{value}</span>
+        <span className="value-text">{displayValue}</span>
         {showProgress && (
           <div className="progress-bar-container">
             <div 
@@ -1076,23 +1225,85 @@ function App() {
               <h3>Раздел</h3>
               <p>{modalData.раздел}</p>
             </div>
-            {(modalData.личные_боли || modalData.корпоративные_боли) && (
-              <div className="modal-section">
-                <h3>Боли</h3>
-                {modalData.личные_боли && (
-                  <div className="modal-pain">
+            <div className="modal-section">
+              <h3>Боли</h3>
+              {editingInModal ? (
+                <div className="modal-pains-edit">
+                  <div className="pain-edit-group">
                     <span className="modal-label">Личные:</span>
-                    <span className="pain-badge personal">{modalData.личные_боли}</span>
+                    <div className="pain-checkboxes-inline">
+                      {['Легкость', 'Безопасность', 'Скорость', 'Экономия'].map(cat => (
+                        <label key={cat} className="pain-checkbox-inline">
+                          <input
+                            type="checkbox"
+                            checked={modalEditValues.personal_pain?.includes(cat)}
+                            onChange={e => {
+                              const pains = (modalEditValues.personal_pain || '').split(',').map(p => p.trim()).filter(p => p)
+                              if (e.target.checked) {
+                                pains.push(cat)
+                              } else {
+                                const idx = pains.indexOf(cat)
+                                if (idx > -1) pains.splice(idx, 1)
+                              }
+                              setModalEditValues({...modalEditValues, personal_pain: pains.join(', ')})
+                            }}
+                          />
+                          <span className={`pain-label ${cat === 'Легкость' ? 'pain-l' : cat === 'Безопасность' ? 'pain-b' : cat === 'Скорость' ? 'pain-s' : 'pain-e'}`}>
+                            {cat.charAt(0)}
+                          </span>
+                          <span className="pain-label-full">{cat}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                )}
-                {modalData.корпоративные_боли && (
-                  <div className="modal-pain">
+                  <div className="pain-edit-group">
                     <span className="modal-label">Корпоративные:</span>
-                    <span className="pain-badge corporate">{modalData.корпоративные_боли}</span>
+                    <div className="pain-checkboxes-inline">
+                      {['Легкость', 'Безопасность', 'Скорость', 'Экономия'].map(cat => (
+                        <label key={cat} className="pain-checkbox-inline">
+                          <input
+                            type="checkbox"
+                            checked={modalEditValues.corporate_pain?.includes(cat)}
+                            onChange={e => {
+                              const pains = (modalEditValues.corporate_pain || '').split(',').map(p => p.trim()).filter(p => p)
+                              if (e.target.checked) {
+                                pains.push(cat)
+                              } else {
+                                const idx = pains.indexOf(cat)
+                                if (idx > -1) pains.splice(idx, 1)
+                              }
+                              setModalEditValues({...modalEditValues, corporate_pain: pains.join(', ')})
+                            }}
+                          />
+                          <span className={`pain-label ${cat === 'Легкость' ? 'pain-l' : cat === 'Безопасность' ? 'pain-b' : cat === 'Скорость' ? 'pain-s' : 'pain-e'}`}>
+                            {cat.charAt(0)}
+                          </span>
+                          <span className="pain-label-full">{cat}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              ) : (
+                <>
+                  {modalData.личные_боли && (
+                    <div className="modal-pain">
+                      <span className="modal-label">Личные:</span>
+                      <span className="pain-badge personal">{modalData.личные_боли}</span>
+                    </div>
+                  )}
+                  {modalData.корпоративные_боли && (
+                    <div className="modal-pain">
+                      <span className="modal-label">Корпоративные:</span>
+                      <span className="pain-badge corporate">{modalData.корпоративные_боли}</span>
+                    </div>
+                  )}
+                  {!modalData.личные_боли && !modalData.корпоративные_боли && (
+                    <p className="modal-text-muted">Не указаны</p>
+                  )}
+                </>
+              )}
+            </div>
             <div className="modal-section">
               <h3>Преимущества</h3>
               {editingInModal ? (
@@ -1132,28 +1343,50 @@ function App() {
               </div>
             )}
             <div className="modal-section">
-              <h3>Значения по тарифам</h3>
+              <h3>Значения по тарифам {modalData.is_section_header && (modalData.характеристика === 'Стоимость' || modalData.характеристика === 'Сроки') && editingInModal && <span className="header-hint">(с прогресс-баром)</span>}</h3>
               <div className="modal-plans">
-                {allPlans.map(plan => (
-                  <div key={plan.название} className="modal-plan-item">
-                    <span className="modal-plan-name">{plan.название}:</span>
-                    {editingInModal ? (
-                      <input
-                        type="text"
-                        className="modal-input"
-                        value={modalEditValues[`value_${plan.название}`] || ''}
-                        onChange={(e) => setModalEditValues({
-                          ...modalEditValues,
-                          [`value_${plan.название}`]: e.target.value
-                        })}
-                      />
-                    ) : (
-                      <span className="modal-plan-value">
-                        {modalData.значения[plan.название] || '—'}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                {allPlans.map(plan => {
+                  const isHeader = modalData.is_section_header && (modalData.характеристика === 'Стоимость' || modalData.характеристика === 'Сроки')
+                  return (
+                    <div key={plan.название} className={`modal-plan-item ${isHeader && editingInModal ? 'modal-plan-item-header' : ''}`}>
+                      <span className="modal-plan-name">{plan.название}:</span>
+                      {editingInModal ? (
+                        <div className="modal-plan-edit-group">
+                          <input
+                            type="text"
+                            className="modal-input"
+                            value={modalEditValues[`value_${plan.название}`] || ''}
+                            onChange={(e) => setModalEditValues({
+                              ...modalEditValues,
+                              [`value_${plan.название}`]: e.target.value
+                            })}
+                            placeholder="Текст значения"
+                          />
+                          {isHeader && (
+                            <div className="modal-percent-group">
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={modalEditValues[`percent_${plan.название}`] || 50}
+                                onChange={(e) => setModalEditValues({
+                                  ...modalEditValues,
+                                  [`percent_${plan.название}`]: parseInt(e.target.value)
+                                })}
+                                className="modal-percent-slider"
+                              />
+                              <span className="modal-percent-value">{modalEditValues[`percent_${plan.название}`] || 50}%</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="modal-plan-value">
+                          {modalData.значения[plan.название] || '—'}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
             {editingInModal && (
@@ -1163,6 +1396,9 @@ function App() {
                 </button>
                 <button className="modal-cancel-btn" onClick={cancelEditingInModal}>
                   ✖ Отмена
+                </button>
+                <button className="modal-delete-btn" onClick={deleteCharacteristicFromModal}>
+                  🗑️ Удалить
                 </button>
               </div>
             )}
@@ -1292,6 +1528,7 @@ function App() {
                   <div 
                     className="section-item-info" 
                     onClick={() => {
+                      if (renamingSection) return
                       if (selectedSectionForEdit === section.name) {
                         setSelectedSectionForEdit(null)
                         setSectionCharacteristics([])
@@ -1301,7 +1538,34 @@ function App() {
                       }
                     }}
                   >
-                    <span className="section-name">{section.name}</span>
+                    {renamingSection === section.name ? (
+                      <div className="section-rename-form" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          className="section-rename-input"
+                          value={renameSectionValue}
+                          onChange={(e) => setRenameSectionValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveRenameSection(section.name)
+                            if (e.key === 'Escape') cancelRenameSection()
+                          }}
+                          autoFocus
+                        />
+                        <button className="btn-rename-save" onClick={() => saveRenameSection(section.name)}>✓</button>
+                        <button className="btn-rename-cancel" onClick={cancelRenameSection}>✕</button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="section-name">{section.name}</span>
+                        <button 
+                          className="btn-rename-section"
+                          onClick={(e) => { e.stopPropagation(); startRenameSection(section.name); }}
+                          title="Переименовать"
+                        >
+                          ✏️
+                        </button>
+                      </>
+                    )}
                     <span className="section-count">{section.characteristics_count} характеристик</span>
                     <span className="section-expand">{selectedSectionForEdit === section.name ? '▼' : '▶'}</span>
                   </div>
@@ -1686,8 +1950,17 @@ function App() {
                         className={`table-row-clickable section-header-row sticky-header-row ${isFirstSticky ? 'sticky-first' : 'sticky-second'}`}
                       >
                         <td className={`cell-characteristic section-header-cell sticky-header-cell`}>
-                          <div className={`char-name section-header-name`}>
+                          <div className={`char-name section-header-name sticky-header-name-with-edit`}>
                             {char.характеристика}
+                            {isAdmin && (
+                              <button 
+                                className="btn-edit-header"
+                                onClick={(e) => { e.stopPropagation(); openModal(char); }}
+                                title="Редактировать"
+                              >
+                                ✏️
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className={`cell-pain section-header-cell sticky-header-cell col-pain-personal`}></td>
