@@ -632,12 +632,19 @@ def find_row_in_json(file_data: Dict, section: str, characteristic: str) -> Opti
             if grouping == characteristic:
                 return row
             last_grouping = grouping
-        # Если grouping пустой, но есть данные, используем последний grouping
+        # Если grouping пустой, но есть данные - это может быть "Максимум сроков"
         elif not grouping and last_grouping:
-            # Проверяем, есть ли данные в этой строке
             has_data = any(row.get(key) for key in ["standard", "expert", "optimal", "express", "ultra"])
-            if has_data and last_grouping == characteristic:
-                return row
+            if has_data:
+                # Специальный случай: "Максимум сроков" - строка после "Сроки" с "Макс" в значениях
+                if characteristic == "Максимум сроков" and last_grouping == "Сроки":
+                    values = [row.get("standard"), row.get("expert"), row.get("optimal"), 
+                             row.get("express"), row.get("ultra")]
+                    if any(v and "Макс" in str(v) for v in values):
+                        return row
+                # Обычное продолжение строки
+                elif last_grouping == characteristic:
+                    return row
     
     return None
 
