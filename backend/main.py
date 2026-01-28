@@ -1065,24 +1065,41 @@ async def delete_characteristic(
         
         found = False
         
+        # Функция для проверки, соответствует ли строка характеристике
+        def row_matches_characteristic(rows, char_name):
+            last_grouping = None
+            for i, row in enumerate(rows):
+                grouping = row.get("grouping", "").strip()
+                
+                # Обычная характеристика
+                if grouping == char_name:
+                    return i
+                
+                # Сохраняем последний grouping для проверки "Максимум сроков"
+                if grouping:
+                    last_grouping = grouping
+                # Строка с пустым grouping после "Сроки" - может быть "Максимум сроков"
+                elif not grouping and last_grouping == "Сроки" and char_name == "Максимум сроков":
+                    values = [row.get("standard"), row.get("expert"), row.get("optimal"), 
+                             row.get("express"), row.get("ultra")]
+                    if any(v and "Макс" in str(v) for v in values):
+                        return i
+            return -1
+        
         # Удаляем из нужной таблицы
         if "tables" in file_data and isinstance(file_data["tables"], list):
             for table_data in file_data["tables"]:
                 if table_data.get("table_name") == section_name:
-                    original_len = len(table_data["rows"])
-                    table_data["rows"] = [
-                        row for row in table_data["rows"] 
-                        if row.get("grouping") != characteristic_name
-                    ]
-                    found = len(table_data["rows"]) < original_len
+                    idx = row_matches_characteristic(table_data["rows"], characteristic_name)
+                    if idx >= 0:
+                        del table_data["rows"][idx]
+                        found = True
                     break
         else:
-            original_len = len(file_data["rows"])
-            file_data["rows"] = [
-                row for row in file_data["rows"] 
-                if row.get("grouping") != characteristic_name
-            ]
-            found = len(file_data["rows"]) < original_len
+            idx = row_matches_characteristic(file_data["rows"], characteristic_name)
+            if idx >= 0:
+                del file_data["rows"][idx]
+                found = True
         
         if not found:
             raise HTTPException(status_code=404, detail=f"Характеристика '{characteristic_name}' не найдена")
