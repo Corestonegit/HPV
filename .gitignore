@@ -66,8 +66,9 @@ logs/
 backend/__pycache__/
 backend/venv/
 
-# Backend data files (не перезаписываются на проде)
-backend/*.json
+# Backend data files - теперь синхронизируются через git
+# backend/*.json
+backend/users.json
 
 # Frontend specific
 frontend/node_modules/
