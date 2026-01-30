@@ -1134,8 +1134,8 @@ function App() {
       ? srokiProgress 
       : calculateProgress(valueForProgress, allValues, isPrice)
     
-    // Показываем прогресс-бар только для числовых значений в разделе "Срочность"; в "Стоимость" и "Сроки" — только текст
-    const showProgress = isSrochnostNumeric && progress !== null
+    // Показываем прогресс-бар для «Сроки» и числовых значений в разделе «Срочность»; для «Стоимость» — только текст
+    const showProgress = (isSroki || isSrochnostNumeric) && progress !== null
     
     return (
       <div className="value-with-progress">
