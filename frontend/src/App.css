@@ -356,49 +356,7 @@ body {
   flex: 1;
 }
 
-.modal-percent-group {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.modal-percent-slider {
-  flex: 1;
-  height: 8px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: #e5e7eb;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.modal-percent-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  background: var(--primary);
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.modal-percent-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  background: var(--primary);
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-}
-
-.modal-percent-value {
-  min-width: 45px;
-  text-align: right;
-  font-weight: 600;
-  color: var(--primary);
-  font-size: 0.9rem;
-}
+/* Слайдеры процента в модалке убраны — для «Стоимость» и «Сроки» только текст */
 
 .header-hint {
   font-size: 0.7rem;

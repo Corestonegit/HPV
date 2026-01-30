@@ -621,15 +621,8 @@ function App() {
       
       for (const plan of allPlans) {
         const textKey = `value_${plan.название}`
-        const percentKey = `percent_${plan.название}`
-        
-        let newValue
-        if (isHeader && modalEditValues[percentKey] !== undefined) {
-          // Для шапок объединяем текст и процент
-          newValue = `${modalEditValues[textKey]} | ${modalEditValues[percentKey]}`
-        } else {
-          newValue = modalEditValues[textKey]
-        }
+        // Для «Стоимость» и «Сроки» сохраняем только текст, без процента
+        const newValue = modalEditValues[textKey] ?? ''
         
         const oldValue = modalData.значения[plan.название] || ''
         if (newValue !== oldValue) {
@@ -929,7 +922,7 @@ function App() {
   
   // Применяем все фильтры (исключая sticky заголовки)
   const filteredCharacteristics = characteristics.filter(char => {
-    // Всегда показываем "Стоимость" и "Сроки"
+    // Всегда показываем "Стоимость" и "Сроки" только в sticky
     if (char.is_section_header && (char.характеристика === 'Стоимость' || char.характеристика === 'Сроки')) {
       return false // Убираем из основного списка, они уже в stickyHeaders
     }
@@ -1141,8 +1134,8 @@ function App() {
       ? srokiProgress 
       : calculateProgress(valueForProgress, allValues, isPrice)
     
-    // Показываем прогресс-бар для заголовков секций или для числовых значений в разделе "Срочность"
-    const showProgress = (isHeader || isSrochnostNumeric) && progress !== null
+    // Показываем прогресс-бар только для числовых значений в разделе "Срочность"; в "Стоимость" и "Сроки" — только текст
+    const showProgress = isSrochnostNumeric && progress !== null
     
     return (
       <div className="value-with-progress">
@@ -1338,12 +1331,16 @@ function App() {
               </div>
             )}
             <div className="modal-section">
-              <h3>Значения по тарифам {modalData.is_section_header && (modalData.характеристика === 'Стоимость' || modalData.характеристика === 'Сроки') && editingInModal && <span className="header-hint">(с прогресс-баром)</span>}</h3>
+              <h3>Значения по тарифам</h3>
               <div className="modal-plans">
                 {allPlans.map(plan => {
                   const isHeader = modalData.is_section_header && (modalData.характеристика === 'Стоимость' || modalData.характеристика === 'Сроки')
+                  const rawVal = modalData.значения[plan.название] || '—'
+                  const displayVal = (isHeader && typeof rawVal === 'string' && rawVal.includes('|'))
+                    ? rawVal.replace(/\s*\|\s*\d+%?\s*$/, '').trim()
+                    : rawVal
                   return (
-                    <div key={plan.название} className={`modal-plan-item ${isHeader && editingInModal ? 'modal-plan-item-header' : ''}`}>
+                    <div key={plan.название} className="modal-plan-item">
                       <span className="modal-plan-name">{plan.название}:</span>
                       {editingInModal ? (
                         <div className="modal-plan-edit-group">
@@ -1357,27 +1354,9 @@ function App() {
                             })}
                             placeholder="Текст значения"
                           />
-                          {isHeader && (
-                            <div className="modal-percent-group">
-                              <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={modalEditValues[`percent_${plan.название}`] || 50}
-                                onChange={(e) => setModalEditValues({
-                                  ...modalEditValues,
-                                  [`percent_${plan.название}`]: parseInt(e.target.value)
-                                })}
-                                className="modal-percent-slider"
-                              />
-                              <span className="modal-percent-value">{modalEditValues[`percent_${plan.название}`] || 50}%</span>
-                            </div>
-                          )}
                         </div>
                       ) : (
-                        <span className="modal-plan-value">
-                          {modalData.значения[plan.название] || '—'}
-                        </span>
+                        <span className="modal-plan-value">{displayVal}</span>
                       )}
                     </div>
                   )
@@ -1981,11 +1960,7 @@ function App() {
                       <tr 
                         key={idx}
                         className={`table-row-clickable ${isHeader ? 'section-header-row' : ''}`}
-                        onClick={(e) => {
-                          if (!isHeader) {
-                            openModal(char)
-                          }
-                        }}
+                        onClick={() => { if (!isHeader) openModal(char) }}
                       >
                         <td className={`cell-characteristic ${isHeader ? 'section-header-cell' : ''}`}>
                           <div className="char-content-wrapper">
