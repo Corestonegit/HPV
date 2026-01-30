@@ -116,6 +116,21 @@ def normalize_category(cat: str) -> str:
     return cat
 
 
+def deduplicate_pains(pains_str: str) -> str:
+    """Нормализует и удаляет дубликаты из строки болей"""
+    if not pains_str:
+        return ""
+    parts = [normalize_category(p.strip()) for p in pains_str.split(",") if p.strip()]
+    # Убираем дубликаты, сохраняя порядок
+    seen = set()
+    unique = []
+    for cat in parts:
+        if cat and cat not in seen:
+            seen.add(cat)
+            unique.append(cat)
+    return ", ".join(unique)
+
+
 def expand_abbreviations(value: str) -> str:
     """Расшифровка сокращений в значениях"""
     if not value or value == "-" or value == "+":
@@ -757,9 +772,9 @@ async def update_value(
                     elif request.field_type == "questions":
                         row["questions"] = request.new_value
                     elif request.field_type == "personal_pain":
-                        row["personal_pain"] = request.new_value
+                        row["personal_pain"] = deduplicate_pains(request.new_value)
                     elif request.field_type == "corporate_pain":
-                        row["corporate_pain"] = request.new_value
+                        row["corporate_pain"] = deduplicate_pains(request.new_value)
                     break
             if not found:
                 raise HTTPException(status_code=404, detail="Характеристика не найдена")
@@ -778,9 +793,9 @@ async def update_value(
             elif request.field_type == "questions":
                 row["questions"] = request.new_value
             elif request.field_type == "personal_pain":
-                row["personal_pain"] = request.new_value
+                row["personal_pain"] = deduplicate_pains(request.new_value)
             elif request.field_type == "corporate_pain":
-                row["corporate_pain"] = request.new_value
+                row["corporate_pain"] = deduplicate_pains(request.new_value)
         
         # Сохраняем файл
         with open(file_path, "w", encoding="utf-8") as f:

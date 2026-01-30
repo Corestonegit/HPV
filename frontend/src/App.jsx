@@ -636,8 +636,8 @@ function App() {
     setModalEditValues({
       description: modalData?.описание || '',
       questions: modalData?.вопросы || '',
-      personal_pain: modalData?.личные_боли || '',
-      corporate_pain: modalData?.корпоративные_боли || '',
+      personal_pain: painsToArray(modalData?.личные_боли || '').join(', '),
+      corporate_pain: painsToArray(modalData?.корпоративные_боли || '').join(', '),
       ...values
     })
   }
@@ -2086,11 +2086,11 @@ function App() {
                           {!isHeader && (
                             char.личные_боли ? (
                               <div className="pain-badges-compact">
-                                {char.личные_боли.split(',').map((pain, idx) => (
+                                {painsToArray(char.личные_боли).map((pain, idx) => (
                                   <span 
                                     key={idx} 
                                     className={`pain-badge-compact personal pain-${getCategoryShort(pain)}`}
-                                    title={pain.trim()}
+                                    title={pain}
                                   >
                                     {getCategoryShort(pain)}
                                   </span>
@@ -2105,11 +2105,11 @@ function App() {
                           {!isHeader && (
                             char.корпоративные_боли ? (
                               <div className="pain-badges-compact">
-                                {char.корпоративные_боли.split(',').map((pain, idx) => (
+                                {painsToArray(char.корпоративные_боли).map((pain, idx) => (
                                   <span 
                                     key={idx} 
                                     className={`pain-badge-compact corporate pain-${getCategoryShort(pain)}`}
-                                    title={pain.trim()}
+                                    title={pain}
                                   >
                                     {getCategoryShort(pain)}
                                   </span>
