@@ -52,6 +52,8 @@ function App() {
   const [sectionCharacteristics, setSectionCharacteristics] = useState([])
   const [draggedChar, setDraggedChar] = useState(null)
   const [dragOverChar, setDragOverChar] = useState(null)
+  const [renamingChar, setRenamingChar] = useState(null) // Переименование характеристики
+  const [renameCharValue, setRenameCharValue] = useState('')
 
   const categories = ['Легкость', 'Безопасность', 'Экономия', 'Скорость']
 
@@ -467,6 +469,49 @@ function App() {
       }
     } catch (error) {
       console.error('Ошибка при загрузке характеристик:', error)
+    }
+  }
+
+  // Переименование характеристики
+  const startRenameChar = (charName) => {
+    setRenamingChar(charName)
+    setRenameCharValue(charName)
+  }
+
+  const cancelRenameChar = () => {
+    setRenamingChar(null)
+    setRenameCharValue('')
+  }
+
+  const saveRenameChar = async (sectionName, oldName) => {
+    if (!renameCharValue.trim() || renameCharValue === oldName) {
+      cancelRenameChar()
+      return
+    }
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/sections/${encodeURIComponent(sectionName)}/characteristics/${encodeURIComponent(oldName)}/rename`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ new_name: renameCharValue.trim() })
+        }
+      )
+      if (response.ok) {
+        cancelRenameChar()
+        await fetchSections()
+        await fetchAllPlans()
+        await fetchSectionCharacteristics(sectionName)
+      } else {
+        const error = await response.json()
+        alert(error.detail || 'Ошибка переименования характеристики')
+      }
+    } catch (error) {
+      console.error('Ошибка при переименовании характеристики:', error)
+      alert('Ошибка при переименовании характеристики')
     }
   }
 
@@ -1576,7 +1621,34 @@ function App() {
                           onDragEnd={handleCharDragEnd}
                         >
                           <span className="char-drag-handle">⋮⋮</span>
-                          <span className="char-name">{char.name}</span>
+                          {renamingChar === char.name ? (
+                            <div className="char-rename-form">
+                              <input
+                                type="text"
+                                value={renameCharValue}
+                                onChange={(e) => setRenameCharValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') saveRenameChar(section.name, char.name)
+                                  if (e.key === 'Escape') cancelRenameChar()
+                                }}
+                                autoFocus
+                                className="char-rename-input"
+                              />
+                              <button className="btn-rename-save" onClick={() => saveRenameChar(section.name, char.name)}>✓</button>
+                              <button className="btn-rename-cancel" onClick={cancelRenameChar}>✕</button>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="char-name">{char.name}</span>
+                              <button 
+                                className="btn-rename-char"
+                                onClick={(e) => { e.stopPropagation(); startRenameChar(char.name); }}
+                                title="Переименовать"
+                              >
+                                ✏️
+                              </button>
+                            </>
+                          )}
                           <div className="char-pains">
                             {char.personal_pain && <span className="pain-tag personal" title="Личные боли">{char.personal_pain}</span>}
                             {char.corporate_pain && <span className="pain-tag corporate" title="Корпоративные боли">{char.corporate_pain}</span>}

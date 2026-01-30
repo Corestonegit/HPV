@@ -1080,6 +1080,64 @@ async def add_characteristic(
         raise HTTPException(status_code=500, detail=f"Ошибка при добавлении характеристики: {str(e)}")
 
 
+class RenameCharacteristicRequest(BaseModel):
+    new_name: str  # Новое название характеристики
+
+
+@app.put("/api/sections/{section_name}/characteristics/{characteristic_name}/rename", tags=["Sections"])
+async def rename_characteristic(
+    section_name: str,
+    characteristic_name: str,
+    request: RenameCharacteristicRequest,
+    current_user: User = Depends(get_current_active_admin_user)
+):
+    """Переименовать характеристику (только для администраторов)"""
+    try:
+        filename = get_section_filename(section_name)
+        if not filename:
+            raise HTTPException(status_code=404, detail=f"Раздел '{section_name}' не найден")
+        
+        file_path = os.path.join(os.path.dirname(__file__), filename)
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            file_data = json.load(f)
+        
+        found = False
+        
+        # Функция для поиска и переименования
+        def rename_in_rows(rows, old_name, new_name):
+            for row in rows:
+                if row.get("grouping", "").strip() == old_name:
+                    row["grouping"] = new_name
+                    return True
+            return False
+        
+        # Ищем и переименовываем в нужной таблице
+        if "tables" in file_data and isinstance(file_data["tables"], list):
+            for table_data in file_data["tables"]:
+                if table_data.get("table_name") == section_name:
+                    found = rename_in_rows(table_data.get("rows", []), characteristic_name, request.new_name)
+                    break
+        else:
+            found = rename_in_rows(file_data.get("rows", []), characteristic_name, request.new_name)
+        
+        if not found:
+            raise HTTPException(status_code=404, detail=f"Характеристика '{characteristic_name}' не найдена")
+        
+        # Сохраняем файл
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(file_data, f, ensure_ascii=False, indent=2)
+        
+        return {"success": True, "message": f"Характеристика переименована в '{request.new_name}'"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Ошибка при переименовании характеристики: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Ошибка при переименовании: {str(e)}")
+
+
 @app.delete("/api/sections/{section_name}/characteristics/{characteristic_name}", tags=["Sections"])
 async def delete_characteristic(
     section_name: str,
