@@ -72,9 +72,10 @@ function App() {
     'Скорость': 'С'
   }
 
-  // Функция для получения короткого названия категории
-  const getCategoryShort = (category) => {
-    const normalized = category.trim()
+  // Функция нормализации категории боли
+  const normalizePainCategory = (cat) => {
+    if (!cat) return ''
+    return cat.trim()
       .replace('Лёгкость', 'Легкость')
       .replace('Лекость', 'Легкость')
       .replace('Безопасностьасность', 'Безопасность')
@@ -82,6 +83,37 @@ function App() {
       .replace('Безоп', 'Безопасность')
       .replace('Эконом', 'Экономия')
       .replace('Сроки', 'Скорость')
+  }
+
+  // Преобразование строки болей в массив уникальных нормализованных значений
+  const painsToArray = (painsStr) => {
+    if (!painsStr) return []
+    const arr = painsStr.split(',').map(p => normalizePainCategory(p)).filter(p => p)
+    return [...new Set(arr)] // убираем дубликаты
+  }
+
+  // Проверка, содержит ли строка болей указанную категорию
+  const hasPainCategory = (painsStr, category) => {
+    return painsToArray(painsStr).includes(category)
+  }
+
+  // Добавить/удалить категорию из строки болей
+  const togglePainCategory = (painsStr, category, add) => {
+    const pains = painsToArray(painsStr)
+    if (add) {
+      if (!pains.includes(category)) {
+        pains.push(category)
+      }
+    } else {
+      const idx = pains.indexOf(category)
+      if (idx > -1) pains.splice(idx, 1)
+    }
+    return pains.join(', ')
+  }
+
+  // Функция для получения короткого названия категории
+  const getCategoryShort = (category) => {
+    const normalized = normalizePainCategory(category)
     return categoryShortNames[normalized] || normalized.charAt(0).toUpperCase()
   }
 
@@ -1269,16 +1301,12 @@ function App() {
                         <label key={cat} className="pain-checkbox-inline">
                           <input
                             type="checkbox"
-                            checked={modalEditValues.personal_pain?.includes(cat)}
+                            checked={hasPainCategory(modalEditValues.personal_pain, cat)}
                             onChange={e => {
-                              const pains = (modalEditValues.personal_pain || '').split(',').map(p => p.trim()).filter(p => p)
-                              if (e.target.checked) {
-                                pains.push(cat)
-                              } else {
-                                const idx = pains.indexOf(cat)
-                                if (idx > -1) pains.splice(idx, 1)
-                              }
-                              setModalEditValues({...modalEditValues, personal_pain: pains.join(', ')})
+                              setModalEditValues({
+                                ...modalEditValues,
+                                personal_pain: togglePainCategory(modalEditValues.personal_pain, cat, e.target.checked)
+                              })
                             }}
                           />
                           <span className={`pain-label ${cat === 'Легкость' ? 'pain-l' : cat === 'Безопасность' ? 'pain-b' : cat === 'Скорость' ? 'pain-s' : 'pain-e'}`}>
@@ -1296,16 +1324,12 @@ function App() {
                         <label key={cat} className="pain-checkbox-inline">
                           <input
                             type="checkbox"
-                            checked={modalEditValues.corporate_pain?.includes(cat)}
+                            checked={hasPainCategory(modalEditValues.corporate_pain, cat)}
                             onChange={e => {
-                              const pains = (modalEditValues.corporate_pain || '').split(',').map(p => p.trim()).filter(p => p)
-                              if (e.target.checked) {
-                                pains.push(cat)
-                              } else {
-                                const idx = pains.indexOf(cat)
-                                if (idx > -1) pains.splice(idx, 1)
-                              }
-                              setModalEditValues({...modalEditValues, corporate_pain: pains.join(', ')})
+                              setModalEditValues({
+                                ...modalEditValues,
+                                corporate_pain: togglePainCategory(modalEditValues.corporate_pain, cat, e.target.checked)
+                              })
                             }}
                           />
                           <span className={`pain-label ${cat === 'Легкость' ? 'pain-l' : cat === 'Безопасность' ? 'pain-b' : cat === 'Скорость' ? 'pain-s' : 'pain-e'}`}>
@@ -1759,16 +1783,12 @@ function App() {
                         <label key={`personal-${cat}`} className="pain-checkbox">
                           <input
                             type="checkbox"
-                            checked={newCharacteristic.personal_pain.includes(cat)}
+                            checked={hasPainCategory(newCharacteristic.personal_pain, cat)}
                             onChange={e => {
-                              const pains = newCharacteristic.personal_pain.split(',').filter(p => p.trim())
-                              if (e.target.checked) {
-                                pains.push(cat)
-                              } else {
-                                const idx = pains.indexOf(cat)
-                                if (idx > -1) pains.splice(idx, 1)
-                              }
-                              setNewCharacteristic({...newCharacteristic, personal_pain: pains.join(', ')})
+                              setNewCharacteristic({
+                                ...newCharacteristic,
+                                personal_pain: togglePainCategory(newCharacteristic.personal_pain, cat, e.target.checked)
+                              })
                             }}
                           />
                           {cat}
@@ -1783,16 +1803,12 @@ function App() {
                         <label key={`corporate-${cat}`} className="pain-checkbox">
                           <input
                             type="checkbox"
-                            checked={newCharacteristic.corporate_pain.includes(cat)}
+                            checked={hasPainCategory(newCharacteristic.corporate_pain, cat)}
                             onChange={e => {
-                              const pains = newCharacteristic.corporate_pain.split(',').filter(p => p.trim())
-                              if (e.target.checked) {
-                                pains.push(cat)
-                              } else {
-                                const idx = pains.indexOf(cat)
-                                if (idx > -1) pains.splice(idx, 1)
-                              }
-                              setNewCharacteristic({...newCharacteristic, corporate_pain: pains.join(', ')})
+                              setNewCharacteristic({
+                                ...newCharacteristic,
+                                corporate_pain: togglePainCategory(newCharacteristic.corporate_pain, cat, e.target.checked)
+                              })
                             }}
                           />
                           {cat}
