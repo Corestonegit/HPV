@@ -23,10 +23,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+@app.on_event("startup")
+async def startup_event():
+    """При старте выводим зарегистрированные маршруты"""
+    for route in app.routes:
+        if hasattr(route, "path") and hasattr(route, "methods"):
+            print(f"[ROUTE] {list(route.methods)} {route.path}")
+
 # Настройка CORS для работы с React фронтендом
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "http://localhost:3004", "http://localhost:3005", "http://localhost:3006", "http://localhost:3007", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -360,12 +368,18 @@ async def log_requests(request, call_next):
 
 @app.get("/")
 async def root():
-    return {"message": "Sales Dashboard API is running"}
+    return {"message": "Sales Dashboard API is running", "app": "HPV", "version": "1.0.0", "login": "/api/login"}
 
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/api/version", tags=["Meta"])
+async def api_version():
+    """Версия API для проверки соответствия проду и локальной сборке."""
+    return {"app": "HPV", "version": "1.0.0"}
 
 @app.get("/api/test-create")
 async def test_create_endpoint():
@@ -375,6 +389,26 @@ async def test_create_endpoint():
 
 # Эндпоинты для аутентификации
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/login", tags=["Authentication"])
+async def login_json(body: LoginBody):
+    """Вход по JSON (username, password) — альтернатива /api/token"""
+    user = authenticate_user(body.username, body.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username, "roles": user.role.value if isinstance(user.role, UserRole) else user.role},
+        expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
 
 @app.post("/api/token", tags=["Authentication"])
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
+// В dev используем пустой base — запросы идут на тот же хост, Vite проксирует /api на бэкенд (без CORS)
+const API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? '' : '')
+
 function App() {
   const [loading, setLoading] = useState(true)
   // Отдельные категории для каждого типа боли
@@ -81,10 +84,7 @@ function App() {
   }
 
   useEffect(() => {
-    // Проверяем токен при загрузке
-    if (token) {
-      checkAuth()
-    }
+    checkAuth()
   }, [])
 
   useEffect(() => {
@@ -93,15 +93,23 @@ function App() {
     }
   }, [isAuthenticated])
 
+  // Страховка: если загрузка зависла — через 12 сек снимаем оверлей, чтобы интерфейс был кликабельным
+  useEffect(() => {
+    if (!loading || !isAuthenticated) return
+    const t = setTimeout(() => setLoading(false), 12000)
+    return () => clearTimeout(t)
+  }, [loading, isAuthenticated])
+
   const checkAuth = async (authToken = null) => {
     try {
       const tokenToUse = authToken || token || localStorage.getItem('token')
       if (!tokenToUse) {
         setIsAuthenticated(false)
+        setLoading(false)
         return
       }
-      
-      const response = await fetch('/api/users/me', {
+
+      const response = await fetch(`${API_BASE}/api/users/me`, {
         headers: {
           'Authorization': `Bearer ${tokenToUse}`
         }
@@ -118,12 +126,14 @@ function App() {
         localStorage.removeItem('token')
         setToken(null)
         setIsAuthenticated(false)
+        setLoading(false)
       }
     } catch (error) {
       console.error('Ошибка проверки авторизации:', error)
       localStorage.removeItem('token')
       setToken(null)
       setIsAuthenticated(false)
+      setLoading(false)
     }
   }
 
@@ -135,16 +145,12 @@ function App() {
     const password = formData.get('password')
 
     try {
-      const formDataToSend = new URLSearchParams()
-      formDataToSend.append('username', username)
-      formDataToSend.append('password', password)
-
-      const response = await fetch('/api/token', {
+      const response = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
         },
-        body: formDataToSend
+        body: JSON.stringify({ username, password })
       })
 
       const data = await response.json()
@@ -169,7 +175,7 @@ function App() {
     setRegisterError('')
 
     try {
-      const response = await fetch('/api/users/create', {
+      const response = await fetch(`${API_BASE}/api/users/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -222,7 +228,7 @@ function App() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users', {
+      const response = await fetch(`${API_BASE}/api/users`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -238,7 +244,7 @@ function App() {
 
   const updateUserRole = async (username, newRole) => {
     try {
-      const response = await fetch(`/api/users/${username}/role?new_role=${newRole}`, {
+      const response = await fetch(`${API_BASE}/api/users/${username}/role?new_role=${newRole}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -257,7 +263,7 @@ function App() {
 
   const updateUserStatus = async (username, isActive) => {
     try {
-      const response = await fetch(`/api/users/${username}/status?is_active=${isActive}`, {
+      const response = await fetch(`${API_BASE}/api/users/${username}/status?is_active=${isActive}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -274,7 +280,7 @@ function App() {
   // Функции для управления разделами
   const fetchSections = async () => {
     try {
-      const response = await fetch('/api/sections', {
+      const response = await fetch(`${API_BASE}/api/sections`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -291,7 +297,7 @@ function App() {
   const createSection = async () => {
     if (!newSectionName.trim()) return
     try {
-      const response = await fetch('/api/sections', {
+      const response = await fetch(`${API_BASE}/api/sections`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -316,7 +322,7 @@ function App() {
   const deleteSection = async (sectionName) => {
     if (!confirm(`Удалить раздел "${sectionName}" со всеми характеристиками?`)) return
     try {
-      const response = await fetch(`/api/sections/${encodeURIComponent(sectionName)}`, {
+      const response = await fetch(`${API_BASE}/api/sections/${encodeURIComponent(sectionName)}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -354,7 +360,7 @@ function App() {
       return
     }
     try {
-      const response = await fetch(`/api/sections/${encodeURIComponent(oldName)}/rename`, {
+      const response = await fetch(`${API_BASE}/api/sections/${encodeURIComponent(oldName)}/rename`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -382,7 +388,7 @@ function App() {
   const addCharacteristic = async () => {
     if (!selectedSectionForEdit || !newCharacteristic.name.trim()) return
     try {
-      const response = await fetch(`/api/sections/${encodeURIComponent(selectedSectionForEdit)}/characteristics`, {
+      const response = await fetch(`${API_BASE}/api/sections/${encodeURIComponent(selectedSectionForEdit)}/characteristics`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -423,7 +429,7 @@ function App() {
     if (!confirm(`Удалить характеристику "${characteristicName}"?`)) return
     try {
       const response = await fetch(
-        `/api/sections/${encodeURIComponent(sectionName)}/characteristics/${encodeURIComponent(characteristicName)}`,
+        `${API_BASE}/api/sections/${encodeURIComponent(sectionName)}/characteristics/${encodeURIComponent(characteristicName)}`,
         {
           method: 'DELETE',
           headers: {
@@ -450,7 +456,7 @@ function App() {
 
   const fetchSectionCharacteristics = async (sectionName) => {
     try {
-      const response = await fetch(`/api/sections/${encodeURIComponent(sectionName)}/characteristics`, {
+      const response = await fetch(`${API_BASE}/api/sections/${encodeURIComponent(sectionName)}/characteristics`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -500,7 +506,7 @@ function App() {
     
     // Сохраняем новый порядок на сервере
     try {
-      const response = await fetch(`/api/sections/${encodeURIComponent(selectedSectionForEdit)}/characteristics/reorder`, {
+      const response = await fetch(`${API_BASE}/api/sections/${encodeURIComponent(selectedSectionForEdit)}/characteristics/reorder`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -639,7 +645,7 @@ function App() {
       
       // Отправляем все обновления
       for (const update of updates) {
-        const response = await fetch('/api/update-value', {
+        const response = await fetch(`${API_BASE}/api/update-value`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -682,7 +688,7 @@ function App() {
     if (!confirm(confirmMsg)) return
     
     try {
-      const response = await fetch(`/api/sections/${encodeURIComponent(modalData.раздел)}/characteristics/${encodeURIComponent(modalData.характеристика)}`, {
+      const response = await fetch(`${API_BASE}/api/sections/${encodeURIComponent(modalData.раздел)}/characteristics/${encodeURIComponent(modalData.характеристика)}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -711,34 +717,21 @@ function App() {
   const fetchAllPlans = async () => {
     setLoading(true)
     try {
-      const response = await fetch('/api/plans', {
+      const response = await fetch(`${API_BASE}/api/plans`, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token || localStorage.getItem('token')}`
         }
       })
       if (!response.ok) {
         if (response.status === 401) {
           handleLogout()
+          setLoading(false)
           return
         }
         throw new Error('Ошибка загрузки данных')
       }
       const data = await response.json()
       setAllPlans(data.plans || [])
-      
-      // Отладка: выводим все разделы
-      if (data.plans && data.plans.length > 0) {
-        const sectionsSet = new Set()
-        data.plans.forEach(plan => {
-          plan.характеристики.forEach(char => {
-            if (char.раздел) {
-              sectionsSet.add(char.раздел)
-            }
-          })
-        })
-        console.log('Загружено разделов:', sectionsSet.size)
-        console.log('Разделы:', Array.from(sectionsSet).sort())
-      }
     } catch (error) {
       console.error('Ошибка при загрузке всех тарифов:', error)
     } finally {
@@ -821,9 +814,7 @@ function App() {
         }
       })
     })
-    const sections = Array.from(sectionsSet).sort()
-    console.log('Извлечено разделов из allPlans:', sections.length, sections)
-    return sections
+    return Array.from(sectionsSet).sort()
   }
 
   // Состояние для порядка разделов (только для админа)
@@ -1131,6 +1122,10 @@ function App() {
           displayValue = value.replace(/\s*\(\d+%?\)/, '').replace(/\s*\|\s*\d+%?/, '').trim()
         }
       }
+    }
+    // Для шапки "Стоимость" не показываем в ячейке значение прогресс-бара (| 100), только текст цены
+    if (isPrice && typeof value === 'string' && value.includes('|')) {
+      displayValue = value.replace(/\s*\|\s*\d+%?\s*$/, '').trim()
     }
     
     // Получаем все raw значения для расчета прогресса (используем raw_значения если есть)
