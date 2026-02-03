@@ -235,48 +235,44 @@ def convert_table_to_plans_format(table_data: Dict) -> List[Dict]:
                 characteristic_name = "Максимум сроков"
         
         # Собираем все категории личных болей (personal_pain + column11 + column12)
-        personal_pain_parts = []
+        personal_pain_raw = []
         if row.get("personal_pain"):
-            personal_pain_parts.append(row.get("personal_pain"))
+            # Разбиваем строку по запятым
+            personal_pain_raw.extend(row.get("personal_pain").split(","))
         if row.get("column11"):
-            personal_pain_parts.append(row.get("column11"))
+            personal_pain_raw.extend(row.get("column11").split(","))
         if row.get("column12"):
-            personal_pain_parts.append(row.get("column12"))
-        # Нормализуем и убираем дубликаты
-        normalized_personal = [normalize_category(p.strip()) for p in personal_pain_parts if p and p.strip()]
-        # Убираем дубликаты, сохраняя порядок
+            personal_pain_raw.extend(row.get("column12").split(","))
+        # Нормализуем каждую категорию и убираем дубликаты
         seen_personal = set()
         unique_personal = []
-        for cat in normalized_personal:
+        for p in personal_pain_raw:
+            cat = normalize_category(p.strip()) if p else ""
             if cat and cat not in seen_personal:
                 seen_personal.add(cat)
                 unique_personal.append(cat)
         personal_pain = ", ".join(unique_personal)
-        # Дополнительная очистка от опечаток после объединения
-        personal_pain = personal_pain.replace("Безопасностьасность", "Безопасность")
         
         # Собираем все категории корпоративных болей (corporate_pain + column14 + column15 + column16)
-        corporate_pain_parts = []
+        corporate_pain_raw = []
         if row.get("corporate_pain"):
-            corporate_pain_parts.append(row.get("corporate_pain"))
+            # Разбиваем строку по запятым
+            corporate_pain_raw.extend(row.get("corporate_pain").split(","))
         if row.get("column14"):
-            corporate_pain_parts.append(row.get("column14"))
+            corporate_pain_raw.extend(row.get("column14").split(","))
         if row.get("column15"):
-            corporate_pain_parts.append(row.get("column15"))
+            corporate_pain_raw.extend(row.get("column15").split(","))
         if row.get("column16"):
-            corporate_pain_parts.append(row.get("column16"))
-        # Нормализуем и убираем дубликаты
-        normalized_corporate = [normalize_category(p.strip()) for p in corporate_pain_parts if p and p.strip()]
-        # Убираем дубликаты, сохраняя порядок
+            corporate_pain_raw.extend(row.get("column16").split(","))
+        # Нормализуем каждую категорию и убираем дубликаты
         seen_corporate = set()
         unique_corporate = []
-        for cat in normalized_corporate:
+        for p in corporate_pain_raw:
+            cat = normalize_category(p.strip()) if p else ""
             if cat and cat not in seen_corporate:
                 seen_corporate.add(cat)
                 unique_corporate.append(cat)
         corporate_pain = ", ".join(unique_corporate)
-        # Дополнительная очистка от опечаток после объединения
-        corporate_pain = corporate_pain.replace("Безопасностьасность", "Безопасность")
         
         characteristics_desc = row.get("characteristics", "") or ""
         advantages = row.get("advantages", "") or ""
