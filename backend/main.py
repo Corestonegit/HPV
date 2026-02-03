@@ -70,19 +70,18 @@ TABLE_NAME_MAPPING = {
 }
 
 # Список JSON файлов для загрузки
-JSON_FILES = [
-    "srochnost.json",
-    "gibkost.json",
-    "bezopasnost.json",
-    "celevoiservis.json",
-    "buhotch.json",
-    "gisp.json",
-    "izmeneniya.json",
-    "tppmpt.json",
-    "podryadchiki.json",
-    "kommunikacii.json",
-    "podderjka.json"
-]
+def get_all_json_files() -> list:
+    """Получить список всех JSON файлов с данными (динамически)"""
+    backend_dir = os.path.dirname(__file__)
+    json_files = []
+    for filename in os.listdir(backend_dir):
+        if filename.endswith('.json') and filename != 'users.json':
+            json_files.append(filename)
+    return json_files
+
+
+# Для обратной совместимости - динамический список
+JSON_FILES = get_all_json_files()
 
 
 def load_table_data(filename: str) -> Dict:
@@ -872,7 +871,8 @@ def section_name_to_filename(section_name: str) -> str:
 async def get_all_sections(current_user: User = Depends(get_current_active_user)):
     """Получить список всех разделов"""
     sections = []
-    for filename in JSON_FILES:
+    # Динамически получаем список файлов при каждом запросе
+    for filename in get_all_json_files():
         file_data = load_table_data(filename)
         if not file_data:
             continue
