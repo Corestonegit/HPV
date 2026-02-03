@@ -773,8 +773,15 @@ async def update_value(
                         row["questions"] = request.new_value
                     elif request.field_type == "personal_pain":
                         row["personal_pain"] = deduplicate_pains(request.new_value)
+                        # Очищаем дополнительные колонки чтобы избежать дублирования
+                        row["column11"] = ""
+                        row["column12"] = ""
                     elif request.field_type == "corporate_pain":
                         row["corporate_pain"] = deduplicate_pains(request.new_value)
+                        # Очищаем дополнительные колонки чтобы избежать дублирования
+                        row["column14"] = ""
+                        row["column15"] = ""
+                        row["column16"] = ""
                     break
             if not found:
                 raise HTTPException(status_code=404, detail="Характеристика не найдена")
@@ -794,8 +801,15 @@ async def update_value(
                 row["questions"] = request.new_value
             elif request.field_type == "personal_pain":
                 row["personal_pain"] = deduplicate_pains(request.new_value)
+                # Очищаем дополнительные колонки чтобы избежать дублирования
+                row["column11"] = ""
+                row["column12"] = ""
             elif request.field_type == "corporate_pain":
                 row["corporate_pain"] = deduplicate_pains(request.new_value)
+                # Очищаем дополнительные колонки чтобы избежать дублирования
+                row["column14"] = ""
+                row["column15"] = ""
+                row["column16"] = ""
         
         # Сохраняем файл
         with open(file_path, "w", encoding="utf-8") as f:
