@@ -106,19 +106,27 @@ def normalize_category(cat: str) -> str:
     if cat in VALID_PAIN_CATEGORIES:
         return cat
     
-    # Нормализация вариантов написания (точные совпадения)
+    # Проверяем по началу строки (регистронезависимо)
     lower = cat.lower()
-    if lower in ("лёгкость", "лекость"):
+    
+    # Легкость
+    if lower.startswith("лёгк") or lower.startswith("легк") or lower.startswith("лек"):
         return "Легкость"
-    if lower in ("безопастность", "безоп"):
+    
+    # Безопасность
+    if lower.startswith("безоп"):
         return "Безопасность"
-    if lower == "эконом":
+    
+    # Экономия
+    if lower.startswith("эконом"):
         return "Экономия"
-    if lower == "сроки":
+    
+    # Скорость
+    if lower.startswith("скор") or lower.startswith("срок"):
         return "Скорость"
     
-    # Если не распознано — возвращаем пустую строку
-    return ""
+    # Если не распознано — возвращаем как есть (не теряем данные)
+    return cat
 
 
 def deduplicate_pains(pains_str: str) -> str:
