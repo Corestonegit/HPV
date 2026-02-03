@@ -78,16 +78,20 @@ function App() {
   // Функция нормализации категории боли
   const normalizePainCategory = (cat) => {
     if (!cat) return ''
-    let normalized = cat.trim()
-      .replace('Лёгкость', 'Легкость')
-      .replace('Лекость', 'Легкость')
-      .replace('Безопасностьасность', 'Безопасность')
-      .replace('Безопастность', 'Безопасность')
-      .replace('Безоп', 'Безопасность')
-      .replace('Эконом', 'Экономия')
-      .replace('Сроки', 'Скорость')
-    // Возвращаем только валидные категории
-    return VALID_PAIN_CATEGORIES.includes(normalized) ? normalized : ''
+    const trimmed = cat.trim()
+    
+    // Если уже валидная категория — возвращаем как есть
+    if (VALID_PAIN_CATEGORIES.includes(trimmed)) return trimmed
+    
+    // Нормализация вариантов написания
+    const lower = trimmed.toLowerCase()
+    if (lower === 'лёгкость' || lower === 'лекость') return 'Легкость'
+    if (lower === 'безопастность' || lower === 'безоп') return 'Безопасность'
+    if (lower === 'эконом') return 'Экономия'
+    if (lower === 'сроки') return 'Скорость'
+    
+    // Если ничего не подошло — пустая строка
+    return ''
   }
 
   // Преобразование строки болей в массив уникальных нормализованных значений
